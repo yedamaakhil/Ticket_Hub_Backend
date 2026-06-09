@@ -1,0 +1,206 @@
+package com.Springboot.Ticket_Booking_System.service;
+
+import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+//import java.util.UUID;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.Springboot.Ticket_Booking_System.dto.BookingRequest;
+import com.Springboot.Ticket_Booking_System.model.Booking;
+import com.Springboot.Ticket_Booking_System.model.BookedSeat;
+import com.Springboot.Ticket_Booking_System.model.Payment;
+import com.Springboot.Ticket_Booking_System.model.Show;
+import com.Springboot.Ticket_Booking_System.repository.BookedSeatRepository;
+import com.Springboot.Ticket_Booking_System.repository.BookingRepository;
+import com.Springboot.Ticket_Booking_System.repository.PaymentRepository;
+import com.Springboot.Ticket_Booking_System.repository.ShowRepository;
+
+@Service
+public class BookingService {
+
+    @Autowired private ShowRepository showRepository;
+    @Autowired private BookedSeatRepository bookedSeatRepository;
+    @Autowired private BookingRepository bookingRepository;
+    @Autowired private PaymentRepository paymentRepository;
+    @Autowired private EmailService emailService;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  CREATE BOOKING (called after payment verification)
+    // ─────────────────────────────────────────────────────────────────────────
+    @Transactional
+    public Map<String, Object> createBooking(BookingRequest req, String clerkUserId) {
+
+        System.out.println("📝 Creating booking for user: " + clerkUserId);
+        System.out.println("📧 User email from request: " + req.getUserEmail());
+        System.out.println("💳 Razorpay Payment ID: " + req.getRazorpayPaymentId());
+
+        // 1. Find or create show
+        LocalDate date = LocalDate.parse(req.getShowDate());
+        Show show = showRepository
+            .findByMovieIdAndShowDateAndShowTime(req.getMovieId(), date, req.getShowTime())
+            .orElseGet(() -> {
+                Show s = new Show();
+                s.setMovieId(req.getMovieId());
+                s.setShowDate(date);
+                s.setShowTime(req.getShowTime());
+                return showRepository.save(s);
+            });
+
+        // 2. Check seat availability (double-check before booking)
+        for (String seatId : req.getSeats()) {
+            if (bookedSeatRepository.existsByShowIdAndSeatId(show.getId(), seatId)) {
+                throw new RuntimeException("Seat " + seatId + " is already booked!");
+            }
+        }
+
+        // 3. Create booking record
+        String bookingRef = "BK" + System.currentTimeMillis();
+
+        Booking booking = new Booking();
+        booking.setBookingRef(bookingRef);
+        booking.setShowId(show.getId());
+        booking.setClerkUserId(clerkUserId);
+        booking.setTotalPrice(req.getTotalPrice());
+        booking.setStatus("CONFIRMED");
+
+        // Movie metadata
+        booking.setMovieTitle(req.getMovieTitle());
+        booking.setMoviePosterPath(req.getMoviePosterPath());
+        booking.setMovieGenres(req.getMovieGenres());
+        booking.setMovieRuntime(req.getMovieRuntime());
+        booking.setMovieLanguage(req.getMovieLanguage());
+
+        // Show details
+        booking.setShowDate(req.getShowDate());
+        booking.setShowTime(req.getShowTime());
+        booking.setSeats(req.getSeats());
+        booking.setTheaterName(req.getTheaterName());
+        booking.setScreenName(req.getScreenName());
+        
+        // Set transaction ID from Razorpay
+        booking.setTransactionId(req.getRazorpayPaymentId());
+
+        bookingRepository.save(booking);
+        System.out.println("✅ Booking saved with ID: " + booking.getId() + ", Ref: " + bookingRef);
+
+        // 4. Save each booked seat
+        for (String seatId : req.getSeats()) {
+            BookedSeat bs = new BookedSeat();
+            bs.setShowId(show.getId());
+            bs.setSeatId(seatId);
+            bs.setTier(getTier(seatId));
+            bs.setPrice(req.getSeatPrices().get(seatId));
+            bs.setClerkUserId(clerkUserId);
+            bs.setBookingId(booking.getId());
+            bookedSeatRepository.save(bs);
+        }
+        System.out.println("✅ Booked " + req.getSeats().size() + " seats");
+
+        // 5. Save payment record
+        Payment payment = new Payment();
+        payment.setBookingId(booking.getId());
+        payment.setAmount(req.getTotalPrice());
+        payment.setPaymentMethod(req.getPaymentMethod());
+        payment.setStatus("SUCCESS");
+        payment.setTransactionId(req.getRazorpayPaymentId());
+        paymentRepository.save(payment);
+        System.out.println("✅ Payment saved with Transaction ID: " + payment.getTransactionId());
+
+        // 6. Send confirmation email
+        String userEmail = req.getUserEmail();
+        if (userEmail != null && !userEmail.trim().isEmpty()) {
+            System.out.println("📧 Attempting to send confirmation email to: " + userEmail);
+            try {
+                emailService.sendBookingConfirmation(booking, userEmail);
+                System.out.println("✅ Email queued for: " + userEmail);
+            } catch (Exception e) {
+                System.err.println("❌ Failed to queue email: " + e.getMessage());
+            }
+        }
+
+        // 7. Return API response
+        Map<String, Object> response = new HashMap<>();
+        response.put("bookingRef", bookingRef);
+        response.put("status", "CONFIRMED");
+        response.put("transactionId", req.getRazorpayPaymentId());
+        
+        System.out.println("🎉 Booking completed successfully!");
+        return response;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  USER BOOKINGS
+    // ─────────────────────────────────────────────────────────────────────────
+    public List<Booking> getUserBookings(String clerkUserId) {
+        System.out.println("📋 Fetching bookings for user: " + clerkUserId);
+        List<Booking> bookings = bookingRepository.findByClerkUserId(clerkUserId);
+        System.out.println("📋 Found " + bookings.size() + " bookings");
+        return bookings;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  CANCEL BOOKING
+    // ─────────────────────────────────────────────────────────────────────────
+    @Transactional
+    public void cancelBooking(Long id) {
+        System.out.println("❌ Cancelling booking with ID: " + id);
+        Booking booking = bookingRepository.findById(id)
+            .orElseThrow(() -> new RuntimeException("Booking not found: " + id));
+        booking.setStatus("CANCELLED");
+        bookingRepository.save(booking);
+        System.out.println("✅ Booking " + id + " cancelled successfully");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  ADMIN — all bookings
+    // ─────────────────────────────────────────────────────────────────────────
+    public List<Booking> getAllBookings() {
+        System.out.println("📊 Admin: Fetching all bookings");
+        return bookingRepository.findAll();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  ADMIN — booking statistics
+    // ─────────────────────────────────────────────────────────────────────────
+    public Map<String, Object> getBookingStatistics() {
+        System.out.println("📊 Admin: Calculating booking statistics");
+        List<Booking> bookings = bookingRepository.findAll();
+
+        long totalBookings = bookings.size();
+        double totalRevenue = bookings.stream()
+            .filter(b -> "CONFIRMED".equals(b.getStatus()))
+            .mapToDouble(Booking::getTotalPrice).sum();
+        long uniqueUsers = bookings.stream()
+            .map(Booking::getClerkUserId).distinct().count();
+        double avgBookingValue = totalBookings > 0 ? totalRevenue / totalBookings : 0;
+        long completedBookings = bookings.stream()
+            .filter(b -> "CONFIRMED".equals(b.getStatus())).count();
+        long cancelledBookings = bookings.stream()
+            .filter(b -> "CANCELLED".equals(b.getStatus())).count();
+
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("totalBookings", totalBookings);
+        stats.put("totalRevenue", totalRevenue);
+        stats.put("totalUsers", uniqueUsers);
+        stats.put("averageBookingValue", avgBookingValue);
+        stats.put("completedBookings", completedBookings);
+        stats.put("cancelledBookings", cancelledBookings);
+        
+        return stats;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  HELPERS
+    // ─────────────────────────────────────────────────────────────────────────
+    private String getTier(String seatId) {
+        char row = seatId.charAt(0);
+        if (row <= 'B') return "economy";
+        if (row <= 'J') return "standard";
+        return "premium";
+    }
+}

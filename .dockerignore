@@ -1,0 +1,14 @@
+target/
+.git/
+.idea/
+.vscode/
+.settings/
+.classpath
+.project
+.factorypath
+*.iml
+*.ipr
+*.iws
+.env
+.env.*
+application-local.properties

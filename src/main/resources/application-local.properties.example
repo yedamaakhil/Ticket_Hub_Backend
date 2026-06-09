@@ -1,0 +1,7 @@
+# Copy to application-local.properties for local development secrets.
+
+spring.mail.username=your-email@gmail.com
+spring.mail.password=your-gmail-app-password
+
+razorpay.api.key=rzp_test_xxx
+razorpay.api.secret=your_razorpay_secret
