@@ -2,6 +2,7 @@ package com.Springboot.Ticket_Booking_System.exception;
 
 import java.util.Map;
 
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,6 +29,13 @@ public class GlobalExceptionHandler {
         System.err.println("Data integrity error: " + ex.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT)
             .body(Map.of("message", "One or more seats are no longer available"));
+    }
+
+    @ExceptionHandler(DataAccessException.class)
+    public ResponseEntity<Map<String, String>> handleDataAccess(DataAccessException ex) {
+        System.err.println("Database error: " + ex.getMostSpecificCause().getMessage());
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+            .body(Map.of("message", "Database error while saving booking"));
     }
 
     @ExceptionHandler(Exception.class)

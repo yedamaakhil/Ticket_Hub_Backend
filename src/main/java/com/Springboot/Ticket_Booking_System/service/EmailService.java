@@ -24,15 +24,19 @@ public class EmailService {
     @Async
     public void sendBookingConfirmation(Booking booking, String toEmail) {
         if (toEmail == null || toEmail.trim().isEmpty() || booking == null) return;
+        if (fromEmail == null || fromEmail.isBlank()) {
+            System.err.println("Email skipped: SPRING_MAIL_USERNAME is not configured");
+            return;
+        }
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
             helper.setFrom(fromEmail);
             helper.setTo(toEmail);
-            helper.setSubject("🎟️ Booking Confirmed: " + getSafeString(booking.getMovieTitle(), "Movie"));
+            helper.setSubject("Booking Confirmed: " + getSafeString(booking.getMovieTitle(), "Movie"));
             helper.setText(buildEmailHtml(booking), true);
             mailSender.send(message);
-        } catch (MessagingException e) {
+        } catch (Exception e) {
             System.err.println("Email Error: " + e.getMessage());
         }
     }

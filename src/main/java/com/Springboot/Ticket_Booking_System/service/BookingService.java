@@ -9,6 +9,8 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.Springboot.Ticket_Booking_System.dto.BookingRequest;
 import com.Springboot.Ticket_Booking_System.exception.SeatUnavailableException;
@@ -71,22 +73,21 @@ public class BookingService {
         booking.setTotalPrice(req.getTotalPrice());
         booking.setStatus("CONFIRMED");
 
-        // Movie metadata
-        booking.setMovieTitle(req.getMovieTitle());
-        booking.setMoviePosterPath(req.getMoviePosterPath());
-        booking.setMovieGenres(req.getMovieGenres());
+        // Movie metadata (truncate for DB safety on cloud MySQL)
+        booking.setMovieTitle(truncate(req.getMovieTitle(), 500));
+        booking.setMoviePosterPath(truncate(req.getMoviePosterPath(), 2000));
+        booking.setMovieGenres(truncate(req.getMovieGenres(), 500));
         booking.setMovieRuntime(req.getMovieRuntime());
-        booking.setMovieLanguage(req.getMovieLanguage());
+        booking.setMovieLanguage(truncate(req.getMovieLanguage(), 50));
 
         // Show details
-        booking.setShowDate(req.getShowDate());
-        booking.setShowTime(req.getShowTime());
+        booking.setShowDate(truncate(req.getShowDate(), 20));
+        booking.setShowTime(truncate(req.getShowTime(), 50));
         booking.setSeats(req.getSeats());
-        booking.setTheaterName(req.getTheaterName());
-        booking.setScreenName(req.getScreenName());
-        
-        // Set transaction ID from Razorpay
-        booking.setTransactionId(req.getRazorpayPaymentId());
+        booking.setTheaterName(truncate(req.getTheaterName(), 255));
+        booking.setScreenName(truncate(req.getScreenName(), 100));
+
+        booking.setTransactionId(truncate(req.getRazorpayPaymentId(), 100));
 
         bookingRepository.save(booking);
         System.out.println("✅ Booking saved with ID: " + booking.getId() + ", Ref: " + bookingRef);
@@ -108,22 +109,30 @@ public class BookingService {
         Payment payment = new Payment();
         payment.setBookingId(booking.getId());
         payment.setAmount(req.getTotalPrice());
-        payment.setPaymentMethod(req.getPaymentMethod());
+        payment.setPaymentMethod(
+            req.getPaymentMethod() != null && !req.getPaymentMethod().isBlank()
+                ? req.getPaymentMethod()
+                : "RAZORPAY"
+        );
         payment.setStatus("SUCCESS");
-        payment.setTransactionId(req.getRazorpayPaymentId());
+        payment.setTransactionId(truncate(req.getRazorpayPaymentId(), 100));
         paymentRepository.save(payment);
         System.out.println("✅ Payment saved with Transaction ID: " + payment.getTransactionId());
 
-        // 6. Send confirmation email
+        // 6. Send confirmation email only after DB commit succeeds
         String userEmail = req.getUserEmail();
         if (userEmail != null && !userEmail.trim().isEmpty()) {
-            System.out.println("📧 Attempting to send confirmation email to: " + userEmail);
-            try {
-                emailService.sendBookingConfirmation(booking, userEmail);
-                System.out.println("✅ Email queued for: " + userEmail);
-            } catch (Exception e) {
-                System.err.println("❌ Failed to queue email: " + e.getMessage());
-            }
+            Booking savedBooking = booking;
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        emailService.sendBookingConfirmation(savedBooking, userEmail);
+                    } catch (Exception e) {
+                        System.err.println("Email after commit failed: " + e.getMessage());
+                    }
+                }
+            });
         }
 
         // 7. Return API response
@@ -239,5 +248,10 @@ public class BookingService {
             case "standard" -> 300;
             default -> 500;
         };
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null) return null;
+        return value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 }

@@ -1,18 +1,17 @@
 package com.Springboot.Ticket_Booking_System.model;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import org.hibernate.annotations.CreationTimestamp;
 
-import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
-import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 
 @Entity
@@ -23,9 +22,13 @@ public class Booking {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     private Long showId;
+
+    @Column(length = 255)
     private String clerkUserId;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
+
     @Column(length = 500)
     private String movieTitle;
 
@@ -35,47 +38,52 @@ public class Booking {
     @Column(length = 500)
     private String movieGenres;
     private Integer movieRuntime;
+
+    @Column(length = 50)
     private String movieLanguage;
+
+    @Column(length = 20)
     private String showDate;
+
+    @Column(length = 50)
     private String showTime;
-    @ElementCollection
-    @CollectionTable(name = "booking_seat_numbers", joinColumns = @JoinColumn(name = "booking_id"))
-    @Column(name = "seat_id", length = 10)
-    private List<String> seats;
+
+    @Column(name = "seats_csv", columnDefinition = "TEXT")
+    private String seatsCsv;
+
+    @Column(length = 50)
     private String bookingRef;
+
+    @Column(length = 100)
     private String transactionId;
+
+    @Column(length = 30)
     private String status;
     private Integer totalPrice;
+
+    @Column(length = 255)
     private String theaterName;
+
+    @Column(length = 100)
     private String screenName;
 
     public Booking() {
         super();
     }
 
-    public Booking(Long id, Long showId, String clerkUserId, LocalDateTime createdAt, String movieTitle,
-            String moviePosterPath, String movieGenres, Integer movieRuntime, String movieLanguage, String showDate,
-            String showTime, List<String> seats, String bookingRef, String transactionId, String status,
-            Integer totalPrice, String theaterName, String screenName) {
-        super();
-        this.id = id;
-        this.showId = showId;
-        this.clerkUserId = clerkUserId;
-        this.createdAt = createdAt;
-        this.movieTitle = movieTitle;
-        this.moviePosterPath = moviePosterPath;
-        this.movieGenres = movieGenres;
-        this.movieRuntime = movieRuntime;
-        this.movieLanguage = movieLanguage;
-        this.showDate = showDate;
-        this.showTime = showTime;
-        this.seats = seats;
-        this.bookingRef = bookingRef;
-        this.transactionId = transactionId;
-        this.status = status;
-        this.totalPrice = totalPrice;
-        this.theaterName = theaterName;
-        this.screenName = screenName;
+    public List<String> getSeats() {
+        if (seatsCsv == null || seatsCsv.isBlank()) {
+            return Collections.emptyList();
+        }
+        return Arrays.asList(seatsCsv.split(","));
+    }
+
+    public void setSeats(List<String> seats) {
+        if (seats == null || seats.isEmpty()) {
+            this.seatsCsv = null;
+            return;
+        }
+        this.seatsCsv = String.join(",", seats);
     }
 
     public Long getId() { return id; }
@@ -111,9 +119,6 @@ public class Booking {
     public String getShowTime() { return showTime; }
     public void setShowTime(String showTime) { this.showTime = showTime; }
 
-    public List<String> getSeats() { return seats; }
-    public void setSeats(List<String> seats) { this.seats = seats; }
-
     public String getBookingRef() { return bookingRef; }
     public void setBookingRef(String bookingRef) { this.bookingRef = bookingRef; }
 
@@ -131,14 +136,4 @@ public class Booking {
 
     public String getScreenName() { return screenName; }
     public void setScreenName(String screenName) { this.screenName = screenName; }
-
-    @Override
-    public String toString() {
-        return "Booking [id=" + id + ", showId=" + showId + ", clerkUserId=" + clerkUserId + ", createdAt=" + createdAt
-                + ", movieTitle=" + movieTitle + ", moviePosterPath=" + moviePosterPath + ", movieGenres=" + movieGenres
-                + ", movieRuntime=" + movieRuntime + ", movieLanguage=" + movieLanguage + ", showDate=" + showDate
-                + ", showTime=" + showTime + ", seats=" + seats + ", bookingRef=" + bookingRef + ", transactionId="
-                + transactionId + ", status=" + status + ", totalPrice=" + totalPrice + ", theaterName=" + theaterName
-                + ", screenName=" + screenName + "]";
-    }
 }
