@@ -12,9 +12,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 
@@ -39,8 +36,6 @@ public class ClerkJwtFilter extends OncePerRequestFilter {
 
     @Value("${clerk.jwt.public-key:}")
     private String clerkPublicKeyPem;
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -85,18 +80,44 @@ public class ClerkJwtFilter extends OncePerRequestFilter {
             if (parts.length < 2) return;
 
             String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
-            JsonNode payload = objectMapper.readTree(payloadJson);
 
-            String userId = payload.path("sub").asText(null);
-            String email = payload.path("email").asText(null);
+            String userId = extractJsonString(payloadJson, "sub");
+            String email = extractJsonString(payloadJson, "email");
             if (email == null || email.isBlank()) {
-                email = payload.path("primary_email_address").asText(null);
+                email = extractJsonString(payloadJson, "primary_email_address");
             }
 
             setUserAttributes(request, userId, email);
         } catch (Exception e) {
             System.err.println("Failed to decode JWT payload: " + e.getMessage());
         }
+    }
+
+    private String extractJsonString(String json, String field) {
+        String marker = "\"" + field + "\"";
+        int fieldIndex = json.indexOf(marker);
+        if (fieldIndex < 0) return null;
+
+        int colonIndex = json.indexOf(':', fieldIndex + marker.length());
+        if (colonIndex < 0) return null;
+
+        int valueStart = colonIndex + 1;
+        while (valueStart < json.length() && Character.isWhitespace(json.charAt(valueStart))) {
+            valueStart++;
+        }
+        if (valueStart >= json.length() || json.charAt(valueStart) != '"') {
+            return null;
+        }
+
+        int valueEnd = valueStart + 1;
+        while (valueEnd < json.length()) {
+            char c = json.charAt(valueEnd);
+            if (c == '"' && json.charAt(valueEnd - 1) != '\\') break;
+            valueEnd++;
+        }
+        if (valueEnd >= json.length()) return null;
+
+        return json.substring(valueStart + 1, valueEnd);
     }
 
     private PublicKey getClerkPublicKey() throws Exception {
