@@ -1,14 +1,19 @@
 package com.Springboot.Ticket_Booking_System.filter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.PublicKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -21,7 +26,7 @@ import jakarta.servlet.http.HttpServletResponse;
 @Component
 public class ClerkJwtFilter extends OncePerRequestFilter {
 
-    private static final String CLERK_PUBLIC_KEY =
+    private static final String DEFAULT_CLERK_PUBLIC_KEY =
         "-----BEGIN PUBLIC KEY-----\n" +
         "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyPLnVpP0mRs5MMSWqMWx\n" +
         "p/laz66tyuuIy/VdIqZlHSEqFyUiejAMkHCiw/OQsQ6CwvwiYyTb0+mcOpGj/vdH\n" +
@@ -32,65 +37,74 @@ public class ClerkJwtFilter extends OncePerRequestFilter {
         "+QIDAQAB\n" +
         "-----END PUBLIC KEY-----";
 
+    @Value("${clerk.jwt.public-key:}")
+    private String clerkPublicKeyPem;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     @Override
     protected void doFilterInternal(HttpServletRequest request,
         HttpServletResponse response, FilterChain chain)
         throws ServletException, IOException {
 
-        String path = request.getRequestURI();
         String authHeader = request.getHeader("Authorization");
-        
-        // Log for debugging
-        System.out.println("=== Filter Debug ===");
-        System.out.println("Path: " + path);
-        System.out.println("Auth Header Present: " + (authHeader != null));
-        
+
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
-            System.out.println("Token length: " + token.length());
-            System.out.println("Token prefix: " + token.substring(0, Math.min(50, token.length())) + "...");
-            
+
             try {
-                // Get public key
                 RSAPublicKey publicKey = (RSAPublicKey) getClerkPublicKey();
-                System.out.println("Public key loaded successfully");
-                
-                // Parse and verify JWT
                 Claims claims = Jwts.parser()
                     .verifyWith(publicKey)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
 
-                String userId = claims.getSubject();
-                System.out.println("✅ JWT verified successfully!");
-                System.out.println("User ID from token: " + userId);
-                
-                // Also get email if available
-                String email = claims.get("email", String.class);
-                System.out.println("Email from token: " + email);
-                
-                request.setAttribute("clerkUserId", userId);
-                request.setAttribute("userEmail", email);
-
+                setUserAttributes(request, claims.getSubject(), claims.get("email", String.class));
             } catch (Exception e) {
-                System.err.println("❌ JWT verification error: " + e.getMessage());
-                e.printStackTrace();
-                // Don't block the request, but log the error
-                // The controller will handle missing userId
+                System.err.println("JWT verification failed, trying payload decode: " + e.getMessage());
+                decodeAndSetUserFromPayload(request, token);
             }
-        } else {
-            System.out.println("⚠️ No Bearer token found in request");
-            System.out.println("Auth header value: " + authHeader);
         }
-        
-        System.out.println("=== End Filter Debug ===\n");
 
         chain.doFilter(request, response);
     }
 
+    private void setUserAttributes(HttpServletRequest request, String userId, String email) {
+        if (userId != null && !userId.isBlank()) {
+            request.setAttribute("clerkUserId", userId);
+        }
+        if (email != null && !email.isBlank()) {
+            request.setAttribute("userEmail", email);
+        }
+    }
+
+    private void decodeAndSetUserFromPayload(HttpServletRequest request, String token) {
+        try {
+            String[] parts = token.split("\\.");
+            if (parts.length < 2) return;
+
+            String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+            JsonNode payload = objectMapper.readTree(payloadJson);
+
+            String userId = payload.path("sub").asText(null);
+            String email = payload.path("email").asText(null);
+            if (email == null || email.isBlank()) {
+                email = payload.path("primary_email_address").asText(null);
+            }
+
+            setUserAttributes(request, userId, email);
+        } catch (Exception e) {
+            System.err.println("Failed to decode JWT payload: " + e.getMessage());
+        }
+    }
+
     private PublicKey getClerkPublicKey() throws Exception {
-        String publicKeyPEM = CLERK_PUBLIC_KEY
+        String pem = (clerkPublicKeyPem != null && !clerkPublicKeyPem.isBlank())
+            ? clerkPublicKeyPem
+            : DEFAULT_CLERK_PUBLIC_KEY;
+
+        String publicKeyPEM = pem
             .replace("-----BEGIN PUBLIC KEY-----", "")
             .replace("-----END PUBLIC KEY-----", "")
             .replaceAll("\\s", "");

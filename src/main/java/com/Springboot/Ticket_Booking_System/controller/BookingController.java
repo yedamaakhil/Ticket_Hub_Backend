@@ -15,7 +15,6 @@ import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/api/bookings")
-@CrossOrigin(origins = "http://localhost:5173")
 public class BookingController {
 
     @Autowired
@@ -30,7 +29,7 @@ public class BookingController {
         String clerkUserId = (String) httpRequest.getAttribute("clerkUserId");
 
         if (clerkUserId == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
+            return ResponseEntity.status(401).body(Map.of("message", "Unauthorized — please sign in again"));
         }
 
         Map<String, Object> result = bookingService.createBooking(request, clerkUserId);

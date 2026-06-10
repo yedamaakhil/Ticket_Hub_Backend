@@ -12,7 +12,6 @@ import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/api/razorpay")
-@CrossOrigin(origins = "http://localhost:5173")
 public class RazorpayController {
 
     @Autowired

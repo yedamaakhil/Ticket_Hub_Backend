@@ -5,11 +5,14 @@ import java.util.List;
 
 import org.hibernate.annotations.CreationTimestamp;
 
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 
 @Entity
@@ -23,14 +26,21 @@ public class Booking {
     private String clerkUserId;
     @CreationTimestamp
     private LocalDateTime createdAt;
+    @Column(length = 500)
     private String movieTitle;
+
+    @Column(columnDefinition = "TEXT")
     private String moviePosterPath;
+
+    @Column(length = 500)
     private String movieGenres;
     private Integer movieRuntime;
     private String movieLanguage;
     private String showDate;
     private String showTime;
     @ElementCollection
+    @CollectionTable(name = "booking_seat_numbers", joinColumns = @JoinColumn(name = "booking_id"))
+    @Column(name = "seat_id", length = 10)
     private List<String> seats;
     private String bookingRef;
     private String transactionId;

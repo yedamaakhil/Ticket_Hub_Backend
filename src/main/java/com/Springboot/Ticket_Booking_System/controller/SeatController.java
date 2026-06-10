@@ -8,7 +8,6 @@ import com.Springboot.Ticket_Booking_System.service.SeatService;
 
 @RestController
 @RequestMapping("/api/seats")
-@CrossOrigin(origins = "http://localhost:5173")
 public class SeatController {
 
     @Autowired

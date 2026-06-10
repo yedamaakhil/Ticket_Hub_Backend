@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.Springboot.Ticket_Booking_System.dto.BookingRequest;
+import com.Springboot.Ticket_Booking_System.exception.SeatUnavailableException;
 import com.Springboot.Ticket_Booking_System.model.Booking;
 import com.Springboot.Ticket_Booking_System.model.BookedSeat;
 import com.Springboot.Ticket_Booking_System.model.Payment;
@@ -39,6 +40,8 @@ public class BookingService {
         System.out.println("📧 User email from request: " + req.getUserEmail());
         System.out.println("💳 Razorpay Payment ID: " + req.getRazorpayPaymentId());
 
+        validateBookingRequest(req);
+
         // 1. Find or create show
         LocalDate date = LocalDate.parse(req.getShowDate());
         Show show = showRepository
@@ -54,7 +57,7 @@ public class BookingService {
         // 2. Check seat availability (double-check before booking)
         for (String seatId : req.getSeats()) {
             if (bookedSeatRepository.existsByShowIdAndSeatId(show.getId(), seatId)) {
-                throw new RuntimeException("Seat " + seatId + " is already booked!");
+                throw new SeatUnavailableException("Seat " + seatId + " is already booked");
             }
         }
 
@@ -94,7 +97,7 @@ public class BookingService {
             bs.setShowId(show.getId());
             bs.setSeatId(seatId);
             bs.setTier(getTier(seatId));
-            bs.setPrice(req.getSeatPrices().get(seatId));
+            bs.setPrice(resolveSeatPrice(req, seatId));
             bs.setClerkUserId(clerkUserId);
             bs.setBookingId(booking.getId());
             bookedSeatRepository.save(bs);
@@ -202,5 +205,39 @@ public class BookingService {
         if (row <= 'B') return "economy";
         if (row <= 'J') return "standard";
         return "premium";
+    }
+
+    private void validateBookingRequest(BookingRequest req) {
+        if (req.getMovieId() == null) {
+            throw new IllegalArgumentException("movieId is required");
+        }
+        if (req.getShowDate() == null || req.getShowDate().isBlank()) {
+            throw new IllegalArgumentException("showDate is required");
+        }
+        if (req.getShowTime() == null || req.getShowTime().isBlank()) {
+            throw new IllegalArgumentException("showTime is required");
+        }
+        if (req.getSeats() == null || req.getSeats().isEmpty()) {
+            throw new IllegalArgumentException("At least one seat is required");
+        }
+        if (req.getTotalPrice() == null) {
+            throw new IllegalArgumentException("totalPrice is required");
+        }
+    }
+
+    private Integer resolveSeatPrice(BookingRequest req, String seatId) {
+        if (req.getSeatPrices() != null && req.getSeatPrices().get(seatId) != null) {
+            return req.getSeatPrices().get(seatId);
+        }
+        return defaultPriceForSeat(seatId);
+    }
+
+    private Integer defaultPriceForSeat(String seatId) {
+        String tier = getTier(seatId);
+        return switch (tier) {
+            case "economy" -> 150;
+            case "standard" -> 300;
+            default -> 500;
+        };
     }
 }

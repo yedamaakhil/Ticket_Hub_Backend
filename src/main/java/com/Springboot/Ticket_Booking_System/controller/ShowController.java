@@ -15,7 +15,6 @@ import com.Springboot.Ticket_Booking_System.repository.ShowRepository;
 
 @RestController
 @RequestMapping("/api/shows")
-@CrossOrigin(origins = "http://localhost:5173")
 public class ShowController {
 
     @Autowired private ShowRepository       showRepository;
