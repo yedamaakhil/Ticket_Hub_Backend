@@ -29,5 +29,3 @@ services:
         sync: false
       - key: RAZORPAY_API_SECRET
         sync: false
-      - key: CLERK_SECRET_KEY
-        sync: false
