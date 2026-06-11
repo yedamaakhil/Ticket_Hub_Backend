@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import com.Springboot.Ticket_Booking_System.dto.BookingRequest;
 import com.Springboot.Ticket_Booking_System.model.Booking;
 import com.Springboot.Ticket_Booking_System.service.BookingService;
+import com.Springboot.Ticket_Booking_System.service.UserService;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -19,6 +20,9 @@ public class BookingController {
 
     @Autowired
     private BookingService bookingService;
+
+    @Autowired
+    private UserService userService;
 
     // POST — create booking
     @PostMapping
@@ -32,11 +36,16 @@ public class BookingController {
             return ResponseEntity.status(401).body(Map.of("message", "Unauthorized — please sign in again"));
         }
 
-        // Use Clerk email from JWT if frontend did not send one
+        // Use Clerk email from JWT or Clerk API if frontend did not send one
         if (request.getUserEmail() == null || request.getUserEmail().isBlank()) {
             String jwtEmail = (String) httpRequest.getAttribute("userEmail");
             if (jwtEmail != null && !jwtEmail.isBlank()) {
                 request.setUserEmail(jwtEmail);
+            } else {
+                String clerkEmail = userService.getPrimaryEmail(clerkUserId);
+                if (clerkEmail != null && !clerkEmail.isBlank()) {
+                    request.setUserEmail(clerkEmail);
+                }
             }
         }
 
