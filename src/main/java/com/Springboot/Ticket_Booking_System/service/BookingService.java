@@ -119,20 +119,23 @@ public class BookingService {
         paymentRepository.save(payment);
         System.out.println("✅ Payment saved with Transaction ID: " + payment.getTransactionId());
 
-        // 6. Send confirmation email only after DB commit succeeds
+        // 6. Send confirmation email after DB commit
         String userEmail = req.getUserEmail();
         if (userEmail != null && !userEmail.trim().isEmpty()) {
             Booking savedBooking = booking;
+            String recipient = userEmail.trim();
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    try {
-                        emailService.sendBookingConfirmation(savedBooking, userEmail);
-                    } catch (Exception e) {
-                        System.err.println("Email after commit failed: " + e.getMessage());
+                    boolean sent = emailService.sendBookingConfirmation(savedBooking, recipient);
+                    if (!sent) {
+                        System.err.println("⚠️ Ticket email was NOT sent to: " + recipient
+                            + " — check SPRING_MAIL_* env vars on Render");
                     }
                 }
             });
+        } else {
+            System.err.println("⚠️ No user email on booking request — confirmation email skipped");
         }
 
         // 7. Return API response

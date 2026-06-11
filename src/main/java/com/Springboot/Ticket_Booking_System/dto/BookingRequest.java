@@ -3,6 +3,8 @@ package com.Springboot.Ticket_Booking_System.dto;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+
 public class BookingRequest {
 
     // ── Show fields ──
@@ -29,6 +31,7 @@ public class BookingRequest {
     private String               screenName;
 
     // ── User email for confirmation email ──
+    @JsonAlias({"user_email", "email"})
     private String               userEmail;
 
     // ─────────────────────────────────────────────

@@ -32,6 +32,14 @@ public class BookingController {
             return ResponseEntity.status(401).body(Map.of("message", "Unauthorized — please sign in again"));
         }
 
+        // Use Clerk email from JWT if frontend did not send one
+        if (request.getUserEmail() == null || request.getUserEmail().isBlank()) {
+            String jwtEmail = (String) httpRequest.getAttribute("userEmail");
+            if (jwtEmail != null && !jwtEmail.isBlank()) {
+                request.setUserEmail(jwtEmail);
+            }
+        }
+
         Map<String, Object> result = bookingService.createBooking(request, clerkUserId);
         return ResponseEntity.ok(result);
     }
