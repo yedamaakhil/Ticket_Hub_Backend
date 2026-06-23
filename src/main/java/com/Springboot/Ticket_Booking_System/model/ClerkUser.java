@@ -1,4 +1,4 @@
-package com.Springboot.Ticket_Booking_System.controller;
+package com.Springboot.Ticket_Booking_System.model;
 
 import java.util.List;
 
