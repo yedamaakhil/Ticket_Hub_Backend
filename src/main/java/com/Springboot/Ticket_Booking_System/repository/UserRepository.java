@@ -1,11 +1,11 @@
 package com.Springboot.Ticket_Booking_System.repository;
 
-import java.util.Collection;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 
-import com.Springboot.Ticket_Booking_System.dto.UserDTO;
+import com.Springboot.Ticket_Booking_System.model.User;
 
-public interface UserRepository {
-
-	Collection<UserDTO> findAll();
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
 
 }
