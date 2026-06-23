@@ -5,12 +5,14 @@ public class UserDTO {
 	private String name;
 	private String email;
 	private String role;
+	private String clerkUserId;
 
-	public UserDTO(Long id, String name, String email, String role) {
+	public UserDTO(Long id, String name, String email, String role, String clerkUserId) {
 		this.id = id;
 		this.name = name;
 		this.email = email;
 		this.role = role;
+		this.clerkUserId = clerkUserId;
 	}
 
 	public UserDTO() {
@@ -49,9 +51,17 @@ public class UserDTO {
 		this.role = role;
 	}
 
-	@Override
-	public String toString() {
-		return "UserDTO [id=" + id + ", name=" + name + ", email=" + email + ", role=" + role + "]";
+	public String getClerkUserId() {
+		return clerkUserId;
 	}
 
+	public void setClerkUserId(String clerkUserId) {
+		this.clerkUserId = clerkUserId;
+	}
+
+	@Override
+	public String toString() {
+		return "UserDTO [id=" + id + ", name=" + name + ", email=" + email + ", role=" + role
+				+ ", clerkUserId=" + clerkUserId + "]";
+	}
 }

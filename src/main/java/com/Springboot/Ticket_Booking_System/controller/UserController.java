@@ -1,5 +1,6 @@
 package com.Springboot.Ticket_Booking_System.controller;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -19,20 +20,20 @@ import com.Springboot.Ticket_Booking_System.repository.BookingRepository;
 
 @RestController
 @RequestMapping("/api/users")
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = "${cors.allowed.origins:http://localhost:5173}")
 public class UserController {
 
     @Autowired
     private BookingRepository bookingRepository;
 
-    @Value("${clerk.secret-key}")
+    @Value("${clerk.secret-key:}")
     private String clerkSecretKey;
 
     private final RestClient restClient = RestClient.create();
 
     @GetMapping
     public List<UserDTO> getAllUsers() {
-        // 1. Get distinct Clerk user IDs from all bookings
+        // If no Clerk key configured, return distinct clerk IDs so the UI still shows something
         List<String> userIds = bookingRepository.findAll().stream()
                 .map(Booking::getClerkUserId)
                 .filter(id -> id != null && !id.isBlank())
@@ -43,31 +44,45 @@ public class UserController {
             return List.of();
         }
 
-        // 2. Build query string: ?user_id=id1&user_id=id2... (Clerk accepts up to 100)
+        // No secret key -> fall back to showing the clerk IDs (no email/name available)
+        if (clerkSecretKey == null || clerkSecretKey.isBlank()) {
+            return userIds.stream()
+                    .map(id -> new UserDTO(null, id, null, "USER", id))
+                    .collect(Collectors.toList());
+        }
+
+        // Build query string: ?limit=100&user_id=id1&user_id=id2... (Clerk accepts up to 100)
         StringBuilder url = new StringBuilder("https://api.clerk.com/v1/users?limit=100");
         for (String id : userIds.stream().limit(100).collect(Collectors.toList())) {
             url.append("&user_id=").append(id);
         }
 
-        // 3. Call Clerk Backend API
-        ClerkUser[] clerkUsers = restClient.get()
-                .uri(url.toString())
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + clerkSecretKey)
-                .retrieve()
-                .body(ClerkUser[].class);
+        try {
+            ClerkUser[] clerkUsers = restClient.get()
+                    .uri(url.toString())
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + clerkSecretKey)
+                    .retrieve()
+                    .body(ClerkUser[].class);
 
-        if (clerkUsers == null) {
-            return List.of();
+            if (clerkUsers == null) {
+                return List.of();
+            }
+
+            return Arrays.stream(clerkUsers)
+                    .map(cu -> new UserDTO(
+                            null,
+                            buildName(cu),
+                            cu.primaryEmail(),
+                            "USER",
+                            cu.id()))
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            // If Clerk call fails, fall back to clerk IDs so the endpoint still responds
+            System.err.println("Clerk API call failed: " + e.getMessage());
+            return userIds.stream()
+                    .map(id -> new UserDTO(null, id, null, "USER", id))
+                    .collect(Collectors.toList());
         }
-
-        // 4. Map Clerk response -> your UserDTO
-        return java.util.Arrays.stream(clerkUsers)
-                .map(cu -> new UserDTO(
-                        null,
-                        buildName(cu),
-                        cu.primaryEmail(),
-                        "USER"))
-                .collect(Collectors.toList());
     }
 
     private String buildName(ClerkUser cu) {

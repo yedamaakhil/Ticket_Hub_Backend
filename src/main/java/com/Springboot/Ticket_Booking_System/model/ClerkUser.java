@@ -1,6 +1,7 @@
-package com.Springboot.Ticket_Booking_System.model;
+package com.Springboot.Ticket_Booking_System.controller;
 
 import java.util.List;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -12,10 +13,13 @@ public record ClerkUser(
         @JsonProperty("email_addresses") List<EmailAddress> emailAddresses) {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record EmailAddress(@JsonProperty("email_address") String emailAddress) {}
+    public record EmailAddress(@JsonProperty("email_address") String emailAddress) {
+    }
 
     public String primaryEmail() {
-        if (emailAddresses == null || emailAddresses.isEmpty()) return null;
+        if (emailAddresses == null || emailAddresses.isEmpty()) {
+            return null;
+        }
         return emailAddresses.get(0).emailAddress();
     }
 }
