@@ -10,22 +10,24 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.Springboot.Ticket_Booking_System.dto.UserDTO;
-import com.Springboot.Ticket_Booking_System.repository.UserRepository;
+import com.Springboot.Ticket_Booking_System.model.Booking;
+import com.Springboot.Ticket_Booking_System.repository.BookingRepository;
 
 @RestController
 @RequestMapping("/api/users")
-@CrossOrigin(origins = "http://localhost:5173")  // match what your other controllers use
+@CrossOrigin(origins = "http://localhost:5173")
 public class UserController {
 
     @Autowired
-    private UserRepository userRepository;
+    private BookingRepository bookingRepository;
 
     @GetMapping
     public List<UserDTO> getAllUsers() {
-        return userRepository.findAll()
-                .stream()
-                .map(u -> new UserDTO(u.getId(), u.getName(), u.getEmail(), u.getRole()))
+        return bookingRepository.findAll().stream()
+                .filter(b -> b.getClerkUserId() != null)
+                .map(Booking::getClerkUserId)
+                .distinct()
+                .map(id -> new UserDTO(null, id, null, "USER"))  // name = clerkId, email = null
                 .collect(Collectors.toList());
     }
 }
-
