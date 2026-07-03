@@ -4,7 +4,6 @@ import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-//import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -89,6 +88,12 @@ public class BookingService {
 
         booking.setTransactionId(truncate(req.getRazorpayPaymentId(), 100));
 
+        // ★ FIX: persist the user's email on the booking so we can resend later
+        String userEmail = req.getUserEmail();
+        if (userEmail != null && !userEmail.isBlank()) {
+            booking.setUserEmail(truncate(userEmail.trim(), 255));
+        }
+
         bookingRepository.save(booking);
         System.out.println("✅ Booking saved with ID: " + booking.getId() + ", Ref: " + bookingRef);
 
@@ -119,8 +124,16 @@ public class BookingService {
         paymentRepository.save(payment);
         System.out.println("✅ Payment saved with Transaction ID: " + payment.getTransactionId());
 
+        // ★ FIX: build the response BEFORE registering the commit-callback so the
+        //         same mutable Map reference can be updated with the real email result.
+        Map<String, Object> response = new HashMap<>();
+        response.put("id", booking.getId());
+        response.put("bookingRef", bookingRef);
+        response.put("status", "CONFIRMED");
+        response.put("transactionId", req.getRazorpayPaymentId());
+        response.put("emailSent", false); // default — overwritten below if send succeeds
+
         // 6. Send confirmation email after DB commit
-        String userEmail = req.getUserEmail();
         if (userEmail != null && !userEmail.trim().isEmpty()) {
             Booking savedBooking = booking;
             String recipient = userEmail.trim();
@@ -128,6 +141,10 @@ public class BookingService {
                 @Override
                 public void afterCommit() {
                     boolean sent = emailService.sendBookingConfirmation(savedBooking, recipient);
+                    // Spring commits the transaction (which triggers this callback)
+                    // BEFORE control returns to the controller, so mutating the same
+                    // response object here is safely visible to the caller.
+                    response.put("emailSent", sent);
                     if (!sent) {
                         System.err.println("⚠️ Ticket email was NOT sent to: " + recipient
                             + " — check SPRING_MAIL_* env vars on Render");
@@ -138,14 +155,36 @@ public class BookingService {
             System.err.println("⚠️ No user email on booking request — confirmation email skipped");
         }
 
-        // 7. Return API response
-        Map<String, Object> response = new HashMap<>();
-        response.put("bookingRef", bookingRef);
-        response.put("status", "CONFIRMED");
-        response.put("transactionId", req.getRazorpayPaymentId());
-        
         System.out.println("🎉 Booking completed successfully!");
         return response;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  RESEND CONFIRMATION EMAIL
+    // ─────────────────────────────────────────────────────────────────────────
+    public Map<String, Object> resendConfirmationEmail(Long bookingId) {
+        Map<String, Object> result = new HashMap<>();
+
+        Booking booking = bookingRepository.findById(bookingId).orElse(null);
+        if (booking == null) {
+            result.put("emailSent", false);
+            result.put("emailError", "Booking not found");
+            return result;
+        }
+
+        String recipient = booking.getUserEmail();
+        if (recipient == null || recipient.isBlank()) {
+            result.put("emailSent", false);
+            result.put("emailError", "No email address stored for this booking");
+            return result;
+        }
+
+        boolean sent = emailService.sendBookingConfirmation(booking, recipient);
+        result.put("emailSent", sent);
+        if (!sent) {
+            result.put("emailError", "Failed to send — check SPRING_MAIL_* env vars on Render");
+        }
+        return result;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -205,7 +244,7 @@ public class BookingService {
         stats.put("averageBookingValue", avgBookingValue);
         stats.put("completedBookings", completedBookings);
         stats.put("cancelledBookings", cancelledBookings);
-        
+
         return stats;
     }
 

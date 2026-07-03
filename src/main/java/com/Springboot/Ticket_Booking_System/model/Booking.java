@@ -18,122 +18,219 @@ import jakarta.persistence.Table;
 @Table(name = "bookings")
 public class Booking {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-    private Long showId;
+	@Id
+	@GeneratedValue(strategy = GenerationType.IDENTITY)
+	private Long id;
+	private Long showId;
 
-    @Column(length = 255)
-    private String clerkUserId;
+	@Column(length = 255)
+	private String clerkUserId;
 
-    @CreationTimestamp
-    private LocalDateTime createdAt;
+	@CreationTimestamp
+	private LocalDateTime createdAt;
 
-    @Column(length = 500)
-    private String movieTitle;
+	@Column(length = 500)
+	private String movieTitle;
 
-    @Column(columnDefinition = "TEXT")
-    private String moviePosterPath;
+	@Column(columnDefinition = "TEXT")
+	private String moviePosterPath;
 
-    @Column(length = 500)
-    private String movieGenres;
-    private Integer movieRuntime;
+	@Column(length = 500)
+	private String movieGenres;
+	private Integer movieRuntime;
 
-    @Column(length = 50)
-    private String movieLanguage;
+	@Column(length = 50)
+	private String movieLanguage;
 
-    @Column(length = 20)
-    private String showDate;
+	@Column(length = 20)
+	private String showDate;
 
-    @Column(length = 50)
-    private String showTime;
+	@Column(length = 50)
+	private String showTime;
 
-    @Column(name = "seats_csv", columnDefinition = "TEXT")
-    private String seatsCsv;
+	@Column(name = "seats_csv", columnDefinition = "TEXT")
+	private String seatsCsv;
 
-    @Column(length = 50)
-    private String bookingRef;
+	@Column(length = 50)
+	private String bookingRef;
 
-    @Column(length = 100)
-    private String transactionId;
+	@Column(length = 100)
+	private String transactionId;
 
-    @Column(length = 30)
-    private String status;
-    private Integer totalPrice;
+	@Column(length = 30)
+	private String status;
+	private Integer totalPrice;
 
-    @Column(length = 255)
-    private String theaterName;
+	@Column(length = 255)
+	private String theaterName;
 
-    @Column(length = 100)
-    private String screenName;
+	@Column(length = 100)
+	private String screenName;
 
-    public Booking() {
-        super();
-    }
+	// ★ NEW — needed so we can send/resend the confirmation email
+	@Column(name = "user_email", length = 255)
+	private String userEmail;
 
-    public List<String> getSeats() {
-        if (seatsCsv == null || seatsCsv.isBlank()) {
-            return Collections.emptyList();
-        }
-        return Arrays.asList(seatsCsv.split(","));
-    }
+	public Booking() {
+		super();
+	}
 
-    public void setSeats(List<String> seats) {
-        if (seats == null || seats.isEmpty()) {
-            this.seatsCsv = null;
-            return;
-        }
-        this.seatsCsv = String.join(",", seats);
-    }
+	public List<String> getSeats() {
+		if (seatsCsv == null || seatsCsv.isBlank()) {
+			return Collections.emptyList();
+		}
+		return Arrays.asList(seatsCsv.split(","));
+	}
 
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
+	public void setSeats(List<String> seats) {
+		if (seats == null || seats.isEmpty()) {
+			this.seatsCsv = null;
+			return;
+		}
+		this.seatsCsv = String.join(",", seats);
+	}
 
-    public Long getShowId() { return showId; }
-    public void setShowId(Long showId) { this.showId = showId; }
+	public Long getId() {
+		return id;
+	}
 
-    public String getClerkUserId() { return clerkUserId; }
-    public void setClerkUserId(String clerkUserId) { this.clerkUserId = clerkUserId; }
+	public void setId(Long id) {
+		this.id = id;
+	}
 
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+	public Long getShowId() {
+		return showId;
+	}
 
-    public String getMovieTitle() { return movieTitle; }
-    public void setMovieTitle(String movieTitle) { this.movieTitle = movieTitle; }
+	public void setShowId(Long showId) {
+		this.showId = showId;
+	}
 
-    public String getMoviePosterPath() { return moviePosterPath; }
-    public void setMoviePosterPath(String moviePosterPath) { this.moviePosterPath = moviePosterPath; }
+	public String getClerkUserId() {
+		return clerkUserId;
+	}
 
-    public String getMovieGenres() { return movieGenres; }
-    public void setMovieGenres(String movieGenres) { this.movieGenres = movieGenres; }
+	public void setClerkUserId(String clerkUserId) {
+		this.clerkUserId = clerkUserId;
+	}
 
-    public Integer getMovieRuntime() { return movieRuntime; }
-    public void setMovieRuntime(Integer movieRuntime) { this.movieRuntime = movieRuntime; }
+	public LocalDateTime getCreatedAt() {
+		return createdAt;
+	}
 
-    public String getMovieLanguage() { return movieLanguage; }
-    public void setMovieLanguage(String movieLanguage) { this.movieLanguage = movieLanguage; }
+	public void setCreatedAt(LocalDateTime createdAt) {
+		this.createdAt = createdAt;
+	}
 
-    public String getShowDate() { return showDate; }
-    public void setShowDate(String showDate) { this.showDate = showDate; }
+	public String getMovieTitle() {
+		return movieTitle;
+	}
 
-    public String getShowTime() { return showTime; }
-    public void setShowTime(String showTime) { this.showTime = showTime; }
+	public void setMovieTitle(String movieTitle) {
+		this.movieTitle = movieTitle;
+	}
 
-    public String getBookingRef() { return bookingRef; }
-    public void setBookingRef(String bookingRef) { this.bookingRef = bookingRef; }
+	public String getMoviePosterPath() {
+		return moviePosterPath;
+	}
 
-    public String getTransactionId() { return transactionId; }
-    public void setTransactionId(String transactionId) { this.transactionId = transactionId; }
+	public void setMoviePosterPath(String moviePosterPath) {
+		this.moviePosterPath = moviePosterPath;
+	}
 
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
+	public String getMovieGenres() {
+		return movieGenres;
+	}
 
-    public Integer getTotalPrice() { return totalPrice; }
-    public void setTotalPrice(Integer totalPrice) { this.totalPrice = totalPrice; }
+	public void setMovieGenres(String movieGenres) {
+		this.movieGenres = movieGenres;
+	}
 
-    public String getTheaterName() { return theaterName; }
-    public void setTheaterName(String theaterName) { this.theaterName = theaterName; }
+	public Integer getMovieRuntime() {
+		return movieRuntime;
+	}
 
-    public String getScreenName() { return screenName; }
-    public void setScreenName(String screenName) { this.screenName = screenName; }
+	public void setMovieRuntime(Integer movieRuntime) {
+		this.movieRuntime = movieRuntime;
+	}
+
+	public String getMovieLanguage() {
+		return movieLanguage;
+	}
+
+	public void setMovieLanguage(String movieLanguage) {
+		this.movieLanguage = movieLanguage;
+	}
+
+	public String getShowDate() {
+		return showDate;
+	}
+
+	public void setShowDate(String showDate) {
+		this.showDate = showDate;
+	}
+
+	public String getShowTime() {
+		return showTime;
+	}
+
+	public void setShowTime(String showTime) {
+		this.showTime = showTime;
+	}
+
+	public String getBookingRef() {
+		return bookingRef;
+	}
+
+	public void setBookingRef(String bookingRef) {
+		this.bookingRef = bookingRef;
+	}
+
+	public String getTransactionId() {
+		return transactionId;
+	}
+
+	public void setTransactionId(String transactionId) {
+		this.transactionId = transactionId;
+	}
+
+	public String getStatus() {
+		return status;
+	}
+
+	public void setStatus(String status) {
+		this.status = status;
+	}
+
+	public Integer getTotalPrice() {
+		return totalPrice;
+	}
+
+	public void setTotalPrice(Integer totalPrice) {
+		this.totalPrice = totalPrice;
+	}
+
+	public String getTheaterName() {
+		return theaterName;
+	}
+
+	public void setTheaterName(String theaterName) {
+		this.theaterName = theaterName;
+	}
+
+	public String getScreenName() {
+		return screenName;
+	}
+
+	public void setScreenName(String screenName) {
+		this.screenName = screenName;
+	}
+
+	public String getUserEmail() {
+		return userEmail;
+	}
+
+	public void setUserEmail(String userEmail) {
+		this.userEmail = userEmail;
+	}
 }

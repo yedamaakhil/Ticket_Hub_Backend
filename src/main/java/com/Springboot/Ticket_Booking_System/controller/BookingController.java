@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.*;
 import com.Springboot.Ticket_Booking_System.dto.BookingRequest;
 import com.Springboot.Ticket_Booking_System.model.Booking;
 import com.Springboot.Ticket_Booking_System.service.BookingService;
-
 import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
@@ -27,11 +26,9 @@ public class BookingController {
         HttpServletRequest httpRequest
     ) {
         String clerkUserId = (String) httpRequest.getAttribute("clerkUserId");
-
         if (clerkUserId == null) {
             return ResponseEntity.status(401).body(Map.of("message", "Unauthorized — please sign in again"));
         }
-
         // Use Clerk email from JWT if frontend did not send one
         if (request.getUserEmail() == null || request.getUserEmail().isBlank()) {
             String jwtEmail = (String) httpRequest.getAttribute("userEmail");
@@ -39,7 +36,6 @@ public class BookingController {
                 request.setUserEmail(jwtEmail);
             }
         }
-
         Map<String, Object> result = bookingService.createBooking(request, clerkUserId);
         return ResponseEntity.ok(result);
     }
@@ -58,25 +54,27 @@ public class BookingController {
         bookingService.cancelBooking(id);
         return ResponseEntity.ok("Booking cancelled successfully");
     }
-    
-    
-//    ------------------------------------------ Admin -----------------------------------------------//
-    
- // Add these methods to your existing BookingController.java
 
-	 // Get all bookings (for admin dashboard)
-	 @GetMapping("/all")
-	 public ResponseEntity<List<Booking>> getAllBookings() {
-	     List<Booking> bookings = bookingService.getAllBookings();
-	     return ResponseEntity.ok(bookings);
-	 }
-	
-	 // Get booking statistics for dashboard
-	 @GetMapping("/stats")
-	 public ResponseEntity<Map<String, Object>> getBookingStats() {
-	     Map<String, Object> stats = bookingService.getBookingStatistics();
-	     return ResponseEntity.ok(stats);
-	 }
-    
-    
+    // ★ NEW — resend confirmation email
+    @PostMapping("/{id}/resend-email")
+    public ResponseEntity<Map<String, Object>> resendEmail(@PathVariable Long id) {
+        Map<String, Object> result = bookingService.resendConfirmationEmail(id);
+        return ResponseEntity.ok(result);
+    }
+
+    //    ------------------------------------------ Admin -----------------------------------------------//
+
+    // Get all bookings (for admin dashboard)
+    @GetMapping("/all")
+    public ResponseEntity<List<Booking>> getAllBookings() {
+        List<Booking> bookings = bookingService.getAllBookings();
+        return ResponseEntity.ok(bookings);
+    }
+
+    // Get booking statistics for dashboard
+    @GetMapping("/stats")
+    public ResponseEntity<Map<String, Object>> getBookingStats() {
+        Map<String, Object> stats = bookingService.getBookingStatistics();
+        return ResponseEntity.ok(stats);
+    }
 }
