@@ -2,36 +2,42 @@ package com.Springboot.Ticket_Booking_System.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
 import com.Springboot.Ticket_Booking_System.model.Booking;
 
-import jakarta.mail.internet.InternetAddress;
-import jakarta.mail.internet.MimeMessage;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 public class EmailService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
+    private static final String RESEND_API_URL = "https://api.resend.com/emails";
 
-    @Autowired
-    private JavaMailSender mailSender;
+    @Value("${resend.api.key:}")
+    private String resendApiKey;
 
-    @Value("${spring.mail.username:}")
+    @Value("${resend.from.email:onboarding@resend.dev}")
     private String fromEmail;
 
     @Value("${app.name:TicketHub}")
     private String appName;
 
+    private final RestTemplate restTemplate = new RestTemplate();
+
     /**
-     * Sends booking confirmation email. Returns true if sent successfully.
-     * Runs synchronously — called after DB commit so booking is never rolled back.
+     * Sends booking confirmation email via Resend's HTTP API.
+     * Returns true if sent successfully.
      */
     public boolean sendBookingConfirmation(Booking booking, String toEmail) {
         if (booking == null) {
@@ -42,21 +48,35 @@ public class EmailService {
             log.warn("Email skipped: recipient email is empty for booking {}", booking.getBookingRef());
             return false;
         }
-        if (fromEmail == null || fromEmail.isBlank()) {
-            log.error("Email skipped: SPRING_MAIL_USERNAME is not set on the server");
+        if (resendApiKey == null || resendApiKey.isBlank()) {
+            log.error("Email skipped: RESEND_API_KEY is not set on the server");
             return false;
         }
 
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(new InternetAddress(fromEmail, appName));
-            helper.setTo(toEmail.trim());
-            helper.setSubject("Booking Confirmed: " + getSafeString(booking.getMovieTitle(), "Movie"));
-            helper.setText(buildEmailHtml(booking), true);
-            mailSender.send(message);
-            log.info("Confirmation email sent to {} for booking {}", toEmail, booking.getBookingRef());
-            return true;
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(resendApiKey);
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("from", appName + " <" + fromEmail + ">");
+            body.put("to", new String[]{ toEmail.trim() });
+            body.put("subject", "Booking Confirmed: " + getSafeString(booking.getMovieTitle(), "Movie"));
+            body.put("html", buildEmailHtml(booking));
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+
+            ResponseEntity<String> response = restTemplate.postForEntity(RESEND_API_URL, request, String.class);
+
+            if (response.getStatusCode() == HttpStatus.OK || response.getStatusCode() == HttpStatus.CREATED) {
+                log.info("Confirmation email sent to {} for booking {} — Resend response: {}",
+                    toEmail, booking.getBookingRef(), response.getBody());
+                return true;
+            } else {
+                log.error("Resend returned non-success status {} for booking {}: {}",
+                    response.getStatusCode(), booking.getBookingRef(), response.getBody());
+                return false;
+            }
         } catch (Exception e) {
             log.error("Failed to send email to {} for booking {}: {}",
                 toEmail, booking.getBookingRef(), e.getMessage(), e);
@@ -76,11 +96,6 @@ public class EmailService {
         int totalPrice = booking.getTotalPrice() != null ? booking.getTotalPrice() : 0;
         String seatNumbers = (booking.getSeats() != null && !booking.getSeats().isEmpty())
             ? String.join(", ", booking.getSeats()) : "N/A";
-
-        String posterPath = booking.getMoviePosterPath();
-        String posterUrl = (posterPath != null && !posterPath.isEmpty())
-            ? (posterPath.startsWith("http") ? posterPath : posterPath)
-            : "https://via.placeholder.com/300x450?text=Ticket";
 
         return "<!DOCTYPE html><html><head>"
             + "<style>"
