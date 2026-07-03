@@ -25,12 +25,12 @@ import java.util.Map;
 public class EmailService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
-    private static final String RESEND_API_URL = "https://api.resend.com/emails";
+    private static final String BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
 
-    @Value("${resend.api.key:}")
-    private String resendApiKey;
+    @Value("${brevo.api.key:}")
+    private String brevoApiKey;
 
-    @Value("${resend.from.email:onboarding@resend.dev}")
+    @Value("${brevo.from.email:tickethub.online@gmail.com}")
     private String fromEmail;
 
     @Value("${app.name:TicketHub}")
@@ -47,31 +47,39 @@ public class EmailService {
             log.warn("Email skipped: recipient email is empty for booking {}", booking.getBookingRef());
             return false;
         }
-        if (resendApiKey == null || resendApiKey.isBlank()) {
-            log.error("Email skipped: RESEND_API_KEY is not set on the server");
+        if (brevoApiKey == null || brevoApiKey.isBlank()) {
+            log.error("Email skipped: BREVO_API_KEY is not set on the server");
             return false;
         }
 
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(resendApiKey);
+            headers.set("api-key", brevoApiKey);
+            headers.set("accept", "application/json");
+
+            Map<String, String> sender = new HashMap<>();
+            sender.put("name", appName);
+            sender.put("email", fromEmail);
+
+            Map<String, String> recipient = new HashMap<>();
+            recipient.put("email", toEmail.trim());
 
             Map<String, Object> body = new HashMap<>();
-            body.put("from", appName + " <" + fromEmail + ">");
-            body.put("to", new String[]{ toEmail.trim() });
+            body.put("sender", sender);
+            body.put("to", List.of(recipient));
             body.put("subject", "Booking Confirmed: " + getSafeString(booking.getMovieTitle(), "Movie"));
-            body.put("html", buildEmailHtml(booking));
+            body.put("htmlContent", buildEmailHtml(booking));
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
-            ResponseEntity<String> response = restTemplate.postForEntity(RESEND_API_URL, request, String.class);
+            ResponseEntity<String> response = restTemplate.postForEntity(BREVO_API_URL, request, String.class);
 
-            if (response.getStatusCode() == HttpStatus.OK || response.getStatusCode() == HttpStatus.CREATED) {
-                log.info("Confirmation email sent to {} for booking {} — Resend response: {}",
+            if (response.getStatusCode() == HttpStatus.CREATED || response.getStatusCode() == HttpStatus.OK) {
+                log.info("Confirmation email sent to {} for booking {} — Brevo response: {}",
                     toEmail, booking.getBookingRef(), response.getBody());
                 return true;
             } else {
-                log.error("Resend returned non-success status {} for booking {}: {}",
+                log.error("Brevo returned non-success status {} for booking {}: {}",
                     response.getStatusCode(), booking.getBookingRef(), response.getBody());
                 return false;
             }
@@ -84,8 +92,6 @@ public class EmailService {
 
     // ─────────────────────────────────────────────────────────────────────────
     //  HTML TICKET — compact table-based layout, matches My Shows ticket card.
-    //  Poster column uses an inner height:100% table so the poster fills the
-    //  full card height instead of stopping short.
     // ─────────────────────────────────────────────────────────────────────────
     private String buildEmailHtml(Booking booking) {
         String movieTitle    = getSafeString(booking.getMovieTitle(), "Movie");
@@ -126,14 +132,14 @@ public class EmailService {
             + "<td valign='top' width='72%' style='background-color:#161616;padding:0;'>"
             + "<table role='presentation' width='100%' height='100%' cellpadding='0' cellspacing='0'><tr>"
 
-            // poster — inner table height:100% makes this cell stretch full column height
-            + "<td width='110' valign='top' style='padding:0;background-color:#2a2a2a;'>"
-            + "<img src='" + posterUrl + "' width='110' alt='" + escapeHtml(movieTitle) + "' "
-            + "style='width:110px;height:100%;min-height:170px;object-fit:cover;display:block;' />"
+            // poster
+            + "<td width='145' valign='top' style='padding:0;background-color:#2a2a2a;'>"
+            + "<img src='" + posterUrl + "' width='145' alt='" + escapeHtml(movieTitle) + "' "
+            + "style='width:145px;height:100%;min-height:170px;object-fit:cover;display:block;' />"
             + "</td>"
 
             // details
-            + "<td valign='top' style='padding:14px 18px;'>"
+            + "<td valign='top' style='padding:14px 16px;'>"
 
             + "<table role='presentation' width='100%' cellpadding='0' cellspacing='0'><tr>"
             + "<td valign='top'>"
@@ -195,9 +201,9 @@ public class EmailService {
             + "</td>"
 
             // ── RIGHT: barcode panel ─────────────────────────────────────────
-            + "<td valign='middle' align='center' width='28%' style='background-color:#1c1c1c;padding:16px 12px;border-left:1px solid #262626;'>"
-            + "<div style='background:#ffffff;display:inline-block;padding:12px 10px;border-radius:10px;'>"
-            + "<img src='" + barcodeUrl + "' alt='" + bookingRef + "' width='130' style='display:block;max-width:130px;' />"
+            + "<td valign='middle' align='center' width='26%' style='background-color:#1c1c1c;padding:16px 10px;border-left:1px solid #262626;'>"
+            + "<div style='background:#ffffff;display:inline-block;padding:12px 8px;border-radius:10px;'>"
+            + "<img src='" + barcodeUrl + "' alt='" + bookingRef + "' width='110' style='display:block;max-width:110px;' />"
             + "<div style='color:#111111;font-size:9px;letter-spacing:1px;font-family:monospace;margin-top:6px;text-align:center;'>" + bookingRef + "</div>"
             + "</div>"
             + "<div style='color:#777777;font-size:8px;font-family:monospace;margin-top:10px;word-break:break-all;text-align:center;'>" + transactionId + "</div>"
@@ -226,7 +232,7 @@ public class EmailService {
 
     private String resolvePosterUrl(String posterPath) {
         if (posterPath == null || posterPath.isBlank()) {
-            return "https://via.placeholder.com/110x220/1a1a1a/555555?text=No+Image";
+            return "https://via.placeholder.com/145x220/1a1a1a/555555?text=No+Image";
         }
         if (posterPath.startsWith("http")) {
             return posterPath;

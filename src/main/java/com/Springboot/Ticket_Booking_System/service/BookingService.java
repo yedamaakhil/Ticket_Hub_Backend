@@ -182,7 +182,7 @@ public class BookingService {
         boolean sent = emailService.sendBookingConfirmation(booking, recipient);
         result.put("emailSent", sent);
         if (!sent) {
-            result.put("emailError", "Failed to send — check SPRING_MAIL_* env vars on Render");
+        	result.put("emailError", "Failed to send — check RESEND_API_KEY on Render and Render logs for details");
         }
         return result;
     }
