@@ -194,10 +194,11 @@ public class EmailService {
             "<tr>" +
 
             /* ── COL 1: Movie poster (desktop only, hidden on mobile) ─── */
-            "<td class='col-poster' valign='top' width='130'" +
-            " style='width:130px;background-color:#2a2a2a;padding:0;vertical-align:top;'>" +
+            /* height='1' is an email hack: lets the img use height:100% to fill the row */
+            "<td class='col-poster' valign='top' width='130' height='1'" +
+            " style='width:130px;height:100%;background-color:#2a2a2a;padding:0;vertical-align:top;'>" +
             "<img src='" + posterUrl + "' width='130' alt='" + escapeHtml(movieTitle) + "'" +
-            " style='display:block;width:130px;min-height:190px;height:100%;object-fit:cover;border:0;' />" +
+            " style='display:block;width:130px;height:100%;object-fit:cover;border:0;' />" +
             "</td>" +
 
             /* ── COL 2: Booking details ────────────────────────────────── */
