@@ -92,11 +92,11 @@ public class EmailService {
     // ─────────────────────────────────────────────────────────────────────────
     //  EMAIL HTML — table-based, responsive
     //
-    //  DESKTOP (≥601 px):  [Poster 130px] | [Details, flex] | [Barcode 150px]
-    //  MOBILE  (≤600 px):  [Poster centered] → [Details full-width] → [Barcode centered]
+    //  DESKTOP (≥601 px):  [Poster 130px bg-cover] | [Details] | [Barcode 150px]
+    //  MOBILE  (≤600 px):  [Poster centered img] → [Details] → [Barcode centered]
     //
-    //  Media queries live in both <head> and an inline <style> in <body>
-    //  so Gmail Web (which strips <head>) still picks them up.
+    //  Poster uses background-image on <td> so it fills 100% of card height.
+    //  CSS duplicated in <head> + <body> so Gmail Web picks it up.
     // ─────────────────────────────────────────────────────────────────────────
     private String buildEmailHtml(Booking booking) {
 
@@ -121,27 +121,22 @@ public class EmailService {
             "body,table,td,p,a,li,blockquote{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}" +
             "table,td{mso-table-lspace:0pt;mso-table-rspace:0pt;}" +
             "img{border:0;height:auto;line-height:100%;outline:none;text-decoration:none;}" +
-            /* ── Mobile overrides ───────────────────────────────────────── */
             "@media only screen and (max-width:600px){" +
-            /* Outer wrapper */
             "  .ew{width:100% !important;padding:0 10px !important;box-sizing:border-box !important;}" +
-            /* Ticket card full-width */
             "  .ticket{width:100% !important;}" +
-            /* Hide desktop poster column */
+            /* Hide desktop poster column on mobile */
             "  .col-poster{display:none !important;max-height:0 !important;overflow:hidden !important;}" +
-            /* Stack details + barcode as block rows */
+            /* Stack details + barcode vertically */
             "  .col-details{display:block !important;width:100% !important;padding:18px 16px !important;box-sizing:border-box !important;}" +
             "  .col-barcode{display:block !important;width:100% !important;text-align:center !important;" +
             "    border-left:none !important;border-top:1px solid #2a2a2a !important;padding:20px 16px !important;}" +
-            /* Show mobile poster (hidden on desktop) */
+            /* Show mobile poster */
             "  .mob-poster{display:block !important;text-align:center !important;margin-bottom:14px !important;}" +
-            /* Info grids: stack left/right cells */
+            /* Info grids */
             "  .ig td{display:block !important;width:100% !important;padding-bottom:8px !important;text-align:center !important;}" +
             "  .ig tr{display:block !important;}" +
-            /* Seats/price row */
             "  .sp td{display:block !important;width:100% !important;text-align:center !important;padding-bottom:8px !important;}" +
             "  .sp tr{display:block !important;}" +
-            /* Title/badge row */
             "  .tb td{display:block !important;width:100% !important;text-align:center !important;}" +
             "  .tb tr{display:block !important;}" +
             /* Typography */
@@ -153,7 +148,6 @@ public class EmailService {
             "  .seats-val{font-size:14px !important;}" +
             "  .price-val{font-size:17px !important;}" +
             "  .ref-line{text-align:center !important;}" +
-            /* Barcode inner box centered */
             "  .barcode-box{display:inline-block !important;}" +
             "  .txn-id{font-size:8px !important;}" +
             "  .footer-title{font-size:13px !important;}" +
@@ -166,16 +160,14 @@ public class EmailService {
             "<title>Booking Confirmed</title>" +
             "<style>" + css + "</style>" +
             "</head>" +
-            /* ── BODY ─────────────────────────────────────────────────────── */
+
             "<body style='margin:0;padding:32px 0;background-color:#0a0a0a;" +
             "font-family:\"Segoe UI\",Arial,Helvetica,sans-serif;'>" +
-            /* Gmail-body style block (Gmail strips <head> styles) */
             "<style>" + css + "</style>" +
 
             /* ── Outer wrapper ─────────────────────────────────────────── */
             "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0'>" +
             "<tr><td align='center' style='padding:0 12px;'>" +
-
             "<table role='presentation' width='640' cellpadding='0' cellspacing='0' border='0'" +
             " class='ew' style='max-width:640px;width:640px;'>" +
 
@@ -193,12 +185,15 @@ public class EmailService {
             " style='max-width:640px;width:640px;border-radius:16px;border:1px solid #2a2a2a;overflow:hidden;'>" +
             "<tr>" +
 
-            /* ── COL 1: Movie poster (desktop only, hidden on mobile) ─── */
-            /* height='1' is an email hack: lets the img use height:100% to fill the row */
-            "<td class='col-poster' valign='top' width='130' height='1'" +
-            " style='width:130px;height:100%;background-color:#2a2a2a;padding:0;vertical-align:top;'>" +
-            "<img src='" + posterUrl + "' width='130' alt='" + escapeHtml(movieTitle) + "'" +
-            " style='display:block;width:130px;height:100%;object-fit:cover;border:0;' />" +
+            /* ── COL 1: Poster as background-image — fills full card height ── */
+            // background-image on <td> stretches automatically to match sibling height.
+            // object-fit:cover equivalent via background-size:cover + background-position:center top.
+            "<td class='col-poster' width='130'" +
+            " style='width:130px;min-width:130px;padding:0;" +
+            "background-image:url(\"" + posterUrl + "\");" +
+            "background-size:cover;" +
+            "background-position:center top;" +
+            "background-color:#2a2a2a;'>" +
             "</td>" +
 
             /* ── COL 2: Booking details ────────────────────────────────── */
@@ -210,7 +205,7 @@ public class EmailService {
             "<img src='" + posterUrl + "' width='90' alt='" + escapeHtml(movieTitle) + "'" +
             " style='width:90px;height:auto;border-radius:10px;display:inline-block;' /></div>" +
 
-            /* Title + CONFIRMED badge */
+            /* Title + status badge */
             "<table role='presentation' class='tb' width='100%' cellpadding='0' cellspacing='0' border='0'><tr>" +
             "<td valign='top' style='padding-right:10px;'>" +
             "<div class='movie-title' style='color:#ffffff;font-size:16px;font-weight:800;line-height:1.3;'>" +
@@ -225,7 +220,6 @@ public class EmailService {
             "</td>" +
             "</tr></table>" +
 
-            /* Divider */
             "<div style='border-top:1px solid #2a2a2a;margin:12px 0 10px;'></div>" +
 
             /* Date + Time */
@@ -260,7 +254,6 @@ public class EmailService {
             "</td>" +
             "</tr></table>" +
 
-            /* Divider */
             "<div style='border-top:1px solid #2a2a2a;margin:12px 0 10px;'></div>" +
 
             /* Seats + Price */
@@ -279,7 +272,6 @@ public class EmailService {
             "</td>" +
             "</tr></table>" +
 
-            /* Booking ref */
             "<div class='ref-line' style='color:#555555;font-size:9px;margin-top:10px;" +
                 "font-family:monospace;'>Ref: " + bookingRef + "</div>" +
 
@@ -290,7 +282,6 @@ public class EmailService {
             " style='width:150px;background-color:#1c1c1c;padding:20px 12px;" +
             "border-left:1px solid #2a2a2a;vertical-align:middle;text-align:center;'>" +
 
-            /* White barcode card */
             "<div class='barcode-box' style='display:inline-block;background:#ffffff;" +
                 "border-radius:10px;padding:12px 10px;'>" +
             "<img src='" + barcodeUrl + "' width='110' alt='" + escapeHtml(bookingRef) + "'" +
@@ -299,7 +290,6 @@ public class EmailService {
                 "letter-spacing:1px;margin-top:7px;text-align:center;'>" + escapeHtml(bookingRef) + "</div>" +
             "</div>" +
 
-            /* Transaction ID */
             "<div class='txn-id' style='color:#666666;font-size:8px;font-family:monospace;" +
                 "margin-top:10px;word-break:break-all;text-align:center;line-height:1.4;'>" +
                 escapeHtml(transactionId) + "</div>" +
@@ -326,9 +316,9 @@ public class EmailService {
     // ─────────────────────────────────────────────────────────────────────────
 
     private String buildGenreLine(Booking booking) {
-        String genre   = booking.getMovieGenres()   != null ? booking.getMovieGenres()   : "Action, Drama";
-        String lang    = booking.getMovieLanguage()  != null ? booking.getMovieLanguage()  : "Telugu";
-        Integer runtime = booking.getMovieRuntime() != null ? booking.getMovieRuntime()   : 150;
+        String genre    = booking.getMovieGenres()  != null ? booking.getMovieGenres()  : "Action, Drama";
+        String lang     = booking.getMovieLanguage() != null ? booking.getMovieLanguage() : "Telugu";
+        Integer runtime = booking.getMovieRuntime() != null ? booking.getMovieRuntime() : 150;
         return escapeHtml(genre) + " &middot; " +
                (runtime / 60) + "h " + (runtime % 60) + "m &middot; " +
                escapeHtml(lang.toUpperCase());
@@ -339,7 +329,7 @@ public class EmailService {
             return "https://via.placeholder.com/130x190/1a1a1a/555555?text=No+Image";
         }
         if (posterPath.startsWith("http")) return posterPath;
-        return "https://image.tmdb.org/t/p/w200" + posterPath;
+        return "https://image.tmdb.org/t/p/w342" + posterPath;
     }
 
     private String formatDate(String d) {
@@ -376,5 +366,4 @@ public class EmailService {
     private String urlEncode(String s) {
         return URLEncoder.encode(s, StandardCharsets.UTF_8);
     }
-
 }
