@@ -51,7 +51,6 @@ public class EmailService {
             log.error("Email skipped: BREVO_API_KEY is not set on the server");
             return false;
         }
-
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
@@ -75,225 +74,270 @@ public class EmailService {
             ResponseEntity<String> response = restTemplate.postForEntity(BREVO_API_URL, request, String.class);
 
             if (response.getStatusCode() == HttpStatus.CREATED || response.getStatusCode() == HttpStatus.OK) {
-                log.info("Confirmation email sent to {} for booking {} — Brevo response: {}",
-                    toEmail, booking.getBookingRef(), response.getBody());
+                log.info("Confirmation email sent to {} for booking {} — Brevo: {}",
+                        toEmail, booking.getBookingRef(), response.getBody());
                 return true;
             } else {
-                log.error("Brevo returned non-success status {} for booking {}: {}",
-                    response.getStatusCode(), booking.getBookingRef(), response.getBody());
+                log.error("Brevo returned {} for booking {}: {}",
+                        response.getStatusCode(), booking.getBookingRef(), response.getBody());
                 return false;
             }
         } catch (Exception e) {
             log.error("Failed to send email to {} for booking {}: {}",
-                toEmail, booking.getBookingRef(), e.getMessage(), e);
+                    toEmail, booking.getBookingRef(), e.getMessage(), e);
             return false;
         }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    //  HTML TICKET — compact table-based layout, matches My Shows ticket card.
+    //  EMAIL HTML — table-based, responsive
+    //
+    //  DESKTOP (≥601 px):  [Poster 130px] | [Details, flex] | [Barcode 150px]
+    //  MOBILE  (≤600 px):  [Poster centered] → [Details full-width] → [Barcode centered]
+    //
+    //  Media queries live in both <head> and an inline <style> in <body>
+    //  so Gmail Web (which strips <head>) still picks them up.
     // ─────────────────────────────────────────────────────────────────────────
     private String buildEmailHtml(Booking booking) {
-        String movieTitle    = getSafeString(booking.getMovieTitle(), "Movie");
-        String bookingRef    = getSafeString(booking.getBookingRef(), "BK-" + System.currentTimeMillis());
+
+        // ── Data extraction ────────────────────────────────────────────────
+        String movieTitle    = getSafeString(booking.getMovieTitle(),    "Movie");
+        String bookingRef    = getSafeString(booking.getBookingRef(),    "BK-" + System.currentTimeMillis());
         String transactionId = getSafeString(booking.getTransactionId(), "TXN-" + System.currentTimeMillis());
         String showDate      = formatDate(booking.getShowDate());
         String showTime      = formatTime(booking.getShowTime());
-        String theaterName   = getSafeString(booking.getTheaterName(), "Cinema");
-        String screenName    = getSafeString(booking.getScreenName(), "1");
-        String status        = getSafeString(booking.getStatus(), "CONFIRMED");
-        int totalPrice        = booking.getTotalPrice() != null ? booking.getTotalPrice() : 0;
-        List<String> seats     = booking.getSeats();
+        String theaterName   = getSafeString(booking.getTheaterName(),   "Cinema");
+        String screenName    = getSafeString(booking.getScreenName(),    "1");
+        String status        = getSafeString(booking.getStatus(),        "CONFIRMED");
+        int    totalPrice    = booking.getTotalPrice() != null ? booking.getTotalPrice() : 0;
+        List<String> seats   = booking.getSeats();
+        String seatsLine     = (seats != null && !seats.isEmpty()) ? String.join(", ", seats) : "N/A";
+        String posterUrl     = resolvePosterUrl(booking.getMoviePosterPath());
+        String barcodeUrl    = "https://barcodeapi.org/api/code128/" + urlEncode(bookingRef);
+        String genreLine     = buildGenreLine(booking);
 
-        String posterUrl = resolvePosterUrl(booking.getMoviePosterPath());
-        String barcodeUrl = "https://barcodeapi.org/api/code128/" + urlEncode(bookingRef);
+        // ── Shared CSS (duplicated in head + body for Gmail web) ──────────
+        String css =
+            "body,table,td,p,a,li,blockquote{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}" +
+            "table,td{mso-table-lspace:0pt;mso-table-rspace:0pt;}" +
+            "img{border:0;height:auto;line-height:100%;outline:none;text-decoration:none;}" +
+            /* ── Mobile overrides ───────────────────────────────────────── */
+            "@media only screen and (max-width:600px){" +
+            /* Outer wrapper */
+            "  .ew{width:100% !important;padding:0 10px !important;box-sizing:border-box !important;}" +
+            /* Ticket card full-width */
+            "  .ticket{width:100% !important;}" +
+            /* Hide desktop poster column */
+            "  .col-poster{display:none !important;max-height:0 !important;overflow:hidden !important;}" +
+            /* Stack details + barcode as block rows */
+            "  .col-details{display:block !important;width:100% !important;padding:18px 16px !important;box-sizing:border-box !important;}" +
+            "  .col-barcode{display:block !important;width:100% !important;text-align:center !important;" +
+            "    border-left:none !important;border-top:1px solid #2a2a2a !important;padding:20px 16px !important;}" +
+            /* Show mobile poster (hidden on desktop) */
+            "  .mob-poster{display:block !important;text-align:center !important;margin-bottom:14px !important;}" +
+            /* Info grids: stack left/right cells */
+            "  .ig td{display:block !important;width:100% !important;padding-bottom:8px !important;text-align:center !important;}" +
+            "  .ig tr{display:block !important;}" +
+            /* Seats/price row */
+            "  .sp td{display:block !important;width:100% !important;text-align:center !important;padding-bottom:8px !important;}" +
+            "  .sp tr{display:block !important;}" +
+            /* Title/badge row */
+            "  .tb td{display:block !important;width:100% !important;text-align:center !important;}" +
+            "  .tb tr{display:block !important;}" +
+            /* Typography */
+            "  .movie-title{font-size:17px !important;}" +
+            "  .genre-line{font-size:10px !important;}" +
+            "  .badge{display:inline-block !important;margin:6px auto 0 !important;}" +
+            "  .lbl{font-size:9px !important;}" +
+            "  .val{font-size:13px !important;}" +
+            "  .seats-val{font-size:14px !important;}" +
+            "  .price-val{font-size:17px !important;}" +
+            "  .ref-line{text-align:center !important;}" +
+            /* Barcode inner box centered */
+            "  .barcode-box{display:inline-block !important;}" +
+            "  .txn-id{font-size:8px !important;}" +
+            "  .footer-title{font-size:13px !important;}" +
+            "}";
 
-        String seatsLine = (seats != null && !seats.isEmpty())
-            ? String.join(", ", seats)
-            : "N/A";
+        return "<!DOCTYPE html>" +
+            "<html lang='en'><head><meta charset='utf-8'>" +
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>" +
+            "<meta http-equiv='X-UA-Compatible' content='IE=edge'>" +
+            "<title>Booking Confirmed</title>" +
+            "<style>" + css + "</style>" +
+            "</head>" +
+            /* ── BODY ─────────────────────────────────────────────────────── */
+            "<body style='margin:0;padding:32px 0;background-color:#0a0a0a;" +
+            "font-family:\"Segoe UI\",Arial,Helvetica,sans-serif;'>" +
+            /* Gmail-body style block (Gmail strips <head> styles) */
+            "<style>" + css + "</style>" +
 
-        return "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-            + "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
-            + "<style>"
-            + "  @media only screen and (max-width: 600px) {"
-            + "    .email-container { width: 100% !important; padding: 0 8px !important; }"
-            + "    .ticket-table { width: 100% !important; display: block !important; }"
-            + "    .ticket-card { display: block !important; }"
-            + "    .poster-cell { display: none !important; }"
-            + "    .details-cell { width: 100% !important; display: block !important; padding: 14px 14px !important; }"
-            + "    .barcode-cell { width: 100% !important; display: block !important; border-left: none !important; "
-            + "      border-top: 1px solid #262626 !important; padding: 16px 10px !important; }"
-            + "    .mobile-poster { display: block !important; width: 100% !important; max-width: 120px !important; "
-            + "      margin: 0 auto 12px auto !important; border-radius: 8px !important; }"
-            + "    .movie-title { font-size: 18px !important; text-align: center !important; }"
-            + "    .movie-genre { font-size: 11px !important; text-align: center !important; }"
-            + "    .status-badge { font-size: 9px !important; padding: 3px 10px !important; display: inline-block !important; "
-            + "      margin: 4px auto 0 auto !important; }"
-            + "    .title-row { display: block !important; text-align: center !important; }"
-            + "    .title-row td { display: block !important; width: 100% !important; text-align: center !important; }"
-            + "    .title-row td[align='right'] { text-align: center !important; }"
-            + "    .label-text { font-size: 9px !important; }"
-            + "    .value-text { font-size: 14px !important; }"
-            + "    .seats-text { font-size: 15px !important; }"
-            + "    .price-text { font-size: 18px !important; }"
-            + "    .barcode-img { width: 130px !important; max-width: 130px !important; }"
-            + "    .barcode-ref { font-size: 10px !important; }"
-            + "    .transaction-id { font-size: 9px !important; }"
-            + "    .header-title { font-size: 17px !important; }"
-            + "    .header-sub { font-size: 10px !important; }"
-            + "    .info-grid { display: block !important; }"
-            + "    .info-grid tr { display: block !important; }"
-            + "    .info-grid td { display: block !important; width: 100% !important; padding-bottom: 8px !important; text-align: center !important; }"
-            + "    .info-grid td:last-child { padding-bottom: 0 !important; }"
-            + "    .seats-price-row { display: block !important; }"
-            + "    .seats-price-row tr { display: block !important; }"
-            + "    .seats-price-row td { display: block !important; width: 100% !important; text-align: center !important; "
-            + "      padding-bottom: 8px !important; }"
-            + "    .seats-price-row td:last-child { padding-bottom: 0 !important; }"
-            + "    .seats-price-row td[align='right'] { text-align: center !important; }"
-            + "    .ref-text { font-size: 9px !important; text-align: center !important; }"
-            + "    .divider-line { margin: 8px auto !important; }"
-            + "    .barcode-wrapper { text-align: center !important; }"
-            + "  }"
-            + "  @media only screen and (max-width: 400px) {"
-            + "    .details-cell { padding: 10px 10px !important; }"
-            + "    .movie-title { font-size: 16px !important; }"
-            + "    .value-text { font-size: 13px !important; }"
-            + "    .seats-text { font-size: 14px !important; }"
-            + "    .price-text { font-size: 16px !important; }"
-            + "    .barcode-img { width: 110px !important; max-width: 110px !important; }"
-            + "    .barcode-cell { padding: 12px 8px !important; }"
-            + "  }"
-            + "</style>"
-            + "</head>"
-            + "<body style=\"margin:0;padding:32px 12px;background-color:#0a0a0a;font-family:'Segoe UI',Arial,sans-serif;\">"
-            + "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='max-width:680px;margin:0 auto;' class='email-container'>"
-            + "<tr><td>"
+            /* ── Outer wrapper ─────────────────────────────────────────── */
+            "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0'>" +
+            "<tr><td align='center' style='padding:0 12px;'>" +
 
-            + "<div style='text-align:center;margin-bottom:14px;'>"
-            + "  <span style='color:#ff8080;font-size:19px;font-weight:800;letter-spacing:0.5px;' class='header-title'>" + escapeHtml(appName) + "</span>"
-            + "  <div style='color:#4ade80;font-size:11px;font-weight:600;margin-top:3px;' class='header-sub'>PAYMENT SUCCESSFUL &middot; BOOKING CONFIRMED</div>"
-            + "</div>"
+            "<table role='presentation' width='640' cellpadding='0' cellspacing='0' border='0'" +
+            " class='ew' style='max-width:640px;width:640px;'>" +
 
-            + "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' class='ticket-table' "
-            + "style='border-radius:16px;border:1px solid #262626;overflow:hidden;'>"
-            + "<tr class='ticket-card'>"
+            /* ── App header ────────────────────────────────────────────── */
+            "<tr><td align='center' style='padding-bottom:16px;'>" +
+            "<div style='color:#ff8080;font-size:20px;font-weight:800;letter-spacing:0.5px;'>" +
+                escapeHtml(appName) + "</div>" +
+            "<div style='color:#4ade80;font-size:11px;font-weight:700;margin-top:4px;letter-spacing:0.5px;'>" +
+                "PAYMENT SUCCESSFUL &nbsp;&middot;&nbsp; BOOKING CONFIRMED</div>" +
+            "</td></tr>" +
 
-            // ── LEFT: details panel ──────────────────────────────────────────
-            + "<td valign='top' width='72%' style='background-color:#161616;padding:0;' class='details-cell'>"
-            + "<table role='presentation' width='100%' height='100%' cellpadding='0' cellspacing='0'><tr>"
+            /* ── Ticket card ───────────────────────────────────────────── */
+            "<tr><td>" +
+            "<table role='presentation' class='ticket' width='640' cellpadding='0' cellspacing='0' border='0'" +
+            " style='max-width:640px;width:640px;border-radius:16px;border:1px solid #2a2a2a;overflow:hidden;'>" +
+            "<tr>" +
 
-            // poster (desktop)
-            + "<td width='145' valign='top' style='padding:0;background-color:#2a2a2a;' class='poster-cell'>"
-            + "<img src='" + posterUrl + "' width='145' alt='" + escapeHtml(movieTitle) + "' "
-            + "style='width:145px;height:100%;min-height:170px;object-fit:cover;display:block;' />"
-            + "</td>"
+            /* ── COL 1: Movie poster (desktop only, hidden on mobile) ─── */
+            "<td class='col-poster' valign='top' width='130'" +
+            " style='width:130px;background-color:#2a2a2a;padding:0;vertical-align:top;'>" +
+            "<img src='" + posterUrl + "' width='130' alt='" + escapeHtml(movieTitle) + "'" +
+            " style='display:block;width:130px;min-height:190px;height:100%;object-fit:cover;border:0;' />" +
+            "</td>" +
 
-            // details
-            + "<td valign='top' style='padding:14px 16px;' class='details-cell'>"
+            /* ── COL 2: Booking details ────────────────────────────────── */
+            "<td class='col-details' valign='top'" +
+            " style='background-color:#161616;padding:18px 20px;vertical-align:top;'>" +
 
-            // Mobile poster (hidden on desktop)
-            + "<div style='display:none;' class='mobile-poster'>"
-            + "<img src='" + posterUrl + "' width='120' alt='" + escapeHtml(movieTitle) + "' "
-            + "style='width:100%;max-width:120px;height:auto;border-radius:8px;display:block;' />"
-            + "</div>"
+            /* Mobile poster — hidden on desktop, visible on mobile */
+            "<div class='mob-poster' style='display:none;'>" +
+            "<img src='" + posterUrl + "' width='90' alt='" + escapeHtml(movieTitle) + "'" +
+            " style='width:90px;height:auto;border-radius:10px;display:inline-block;' /></div>" +
 
-            + "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' class='title-row'><tr>"
-            + "<td valign='top' style='width:70%;'>"
-            + "<div style='color:#ffffff;font-size:16px;font-weight:800;margin-bottom:4px;' class='movie-title'>" + escapeHtml(movieTitle) + "</div>"
-            + "<div style='color:#999999;font-size:10px;' class='movie-genre'>" + buildGenreLine(booking) + "</div>"
-            + "</td>"
-            + "<td valign='top' align='right' style='width:30%;'>"
-            + "<span style='display:inline-block;background:rgba(74,222,128,0.15);color:#4ade80;"
-            + "font-size:9px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap;' class='status-badge'>" + escapeHtml(status) + "</span>"
-            + "</td>"
-            + "</tr></table>"
+            /* Title + CONFIRMED badge */
+            "<table role='presentation' class='tb' width='100%' cellpadding='0' cellspacing='0' border='0'><tr>" +
+            "<td valign='top' style='padding-right:10px;'>" +
+            "<div class='movie-title' style='color:#ffffff;font-size:16px;font-weight:800;line-height:1.3;'>" +
+                escapeHtml(movieTitle) + "</div>" +
+            "<div class='genre-line' style='color:#888888;font-size:10px;margin-top:4px;'>" +
+                genreLine + "</div>" +
+            "</td>" +
+            "<td valign='top' align='right' style='white-space:nowrap;'>" +
+            "<span class='badge' style='display:inline-block;background:rgba(74,222,128,0.15);" +
+                "color:#4ade80;font-size:9px;font-weight:700;padding:4px 10px;" +
+                "border-radius:999px;white-space:nowrap;'>" + escapeHtml(status) + "</span>" +
+            "</td>" +
+            "</tr></table>" +
 
-            + "<div style='height:12px;'></div>"
+            /* Divider */
+            "<div style='border-top:1px solid #2a2a2a;margin:12px 0 10px;'></div>" +
 
-            + "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' class='info-grid'><tr>"
-            + "<td width='50%' valign='top'>"
-            + "<div style='color:#888888;font-size:9px;text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:3px;' class='label-text'>Date</div>"
-            + "<div style='color:#ffffff;font-size:13px;font-weight:700;' class='value-text'>" + showDate + "</div>"
-            + "</td>"
-            + "<td width='50%' valign='top'>"
-            + "<div style='color:#888888;font-size:9px;text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:3px;' class='label-text'>Time</div>"
-            + "<div style='color:#ffffff;font-size:13px;font-weight:700;' class='value-text'>" + showTime + "</div>"
-            + "</td>"
-            + "</tr></table>"
+            /* Date + Time */
+            "<table role='presentation' class='ig' width='100%' cellpadding='0' cellspacing='0' border='0'><tr>" +
+            "<td width='50%' valign='top' style='padding-bottom:0;'>" +
+            "<div class='lbl' style='color:#777777;font-size:9px;text-transform:uppercase;" +
+                "font-weight:700;letter-spacing:0.5px;margin-bottom:3px;'>Date</div>" +
+            "<div class='val' style='color:#ffffff;font-size:13px;font-weight:700;'>" + showDate + "</div>" +
+            "</td>" +
+            "<td width='50%' valign='top'>" +
+            "<div class='lbl' style='color:#777777;font-size:9px;text-transform:uppercase;" +
+                "font-weight:700;letter-spacing:0.5px;margin-bottom:3px;'>Time</div>" +
+            "<div class='val' style='color:#ffffff;font-size:13px;font-weight:700;'>" + showTime + "</div>" +
+            "</td>" +
+            "</tr></table>" +
 
-            + "<div style='height:10px;'></div>"
+            "<div style='height:10px;'></div>" +
 
-            + "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' class='info-grid'><tr>"
-            + "<td width='50%' valign='top'>"
-            + "<div style='color:#888888;font-size:9px;text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:3px;' class='label-text'>Theater</div>"
-            + "<div style='color:#ffffff;font-size:13px;font-weight:700;' class='value-text'>" + escapeHtml(theaterName) + "</div>"
-            + "</td>"
-            + "<td width='50%' valign='top'>"
-            + "<div style='color:#888888;font-size:9px;text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:3px;' class='label-text'>Screen</div>"
-            + "<div style='color:#ffffff;font-size:13px;font-weight:700;' class='value-text'>Screen " + escapeHtml(screenName) + "</div>"
-            + "</td>"
-            + "</tr></table>"
+            /* Theater + Screen */
+            "<table role='presentation' class='ig' width='100%' cellpadding='0' cellspacing='0' border='0'><tr>" +
+            "<td width='50%' valign='top' style='padding-bottom:0;'>" +
+            "<div class='lbl' style='color:#777777;font-size:9px;text-transform:uppercase;" +
+                "font-weight:700;letter-spacing:0.5px;margin-bottom:3px;'>Theater</div>" +
+            "<div class='val' style='color:#ffffff;font-size:13px;font-weight:700;'>" +
+                escapeHtml(theaterName) + "</div>" +
+            "</td>" +
+            "<td width='50%' valign='top'>" +
+            "<div class='lbl' style='color:#777777;font-size:9px;text-transform:uppercase;" +
+                "font-weight:700;letter-spacing:0.5px;margin-bottom:3px;'>Screen</div>" +
+            "<div class='val' style='color:#ffffff;font-size:13px;font-weight:700;'>Screen " +
+                escapeHtml(screenName) + "</div>" +
+            "</td>" +
+            "</tr></table>" +
 
-            + "<div style='height:10px;'></div>"
-            + "<div style='border-top:1px solid #262626;' class='divider-line'></div>"
-            + "<div style='height:10px;'></div>"
+            /* Divider */
+            "<div style='border-top:1px solid #2a2a2a;margin:12px 0 10px;'></div>" +
 
-            + "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' class='seats-price-row'><tr>"
-            + "<td width='50%' valign='top'>"
-            + "<div style='color:#888888;font-size:9px;text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:3px;' class='label-text'>Seats</div>"
-            + "<div style='color:#ff5a5a;font-size:14px;font-weight:800;' class='seats-text'>" + escapeHtml(seatsLine) + "</div>"
-            + "</td>"
-            + "<td width='50%' valign='top' align='right'>"
-            + "<div style='color:#888888;font-size:9px;text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:3px;' class='label-text'>Total paid</div>"
-            + "<div style='color:#ffffff;font-size:17px;font-weight:800;' class='price-text'>&#8377;" + formatCurrency(totalPrice) + "</div>"
-            + "</td>"
-            + "</tr></table>"
+            /* Seats + Price */
+            "<table role='presentation' class='sp' width='100%' cellpadding='0' cellspacing='0' border='0'><tr>" +
+            "<td width='50%' valign='top' style='padding-bottom:0;'>" +
+            "<div class='lbl' style='color:#777777;font-size:9px;text-transform:uppercase;" +
+                "font-weight:700;letter-spacing:0.5px;margin-bottom:3px;'>Seats</div>" +
+            "<div class='seats-val' style='color:#ff5a5a;font-size:15px;font-weight:800;'>" +
+                escapeHtml(seatsLine) + "</div>" +
+            "</td>" +
+            "<td width='50%' valign='top' align='right'>" +
+            "<div class='lbl' style='color:#777777;font-size:9px;text-transform:uppercase;" +
+                "font-weight:700;letter-spacing:0.5px;margin-bottom:3px;'>Total Paid</div>" +
+            "<div class='price-val' style='color:#ffffff;font-size:18px;font-weight:800;'>" +
+                "&#8377;" + formatCurrency(totalPrice) + "</div>" +
+            "</td>" +
+            "</tr></table>" +
 
-            + "<div style='height:8px;'></div>"
-            + "<div style='color:#666666;font-size:9px;' class='ref-text'>Ref: " + bookingRef + "</div>"
+            /* Booking ref */
+            "<div class='ref-line' style='color:#555555;font-size:9px;margin-top:10px;" +
+                "font-family:monospace;'>Ref: " + bookingRef + "</div>" +
 
-            + "</td>"
-            + "</tr></table>"
-            + "</td>"
+            "</td>" + /* end col-details */
 
-            // ── RIGHT: barcode panel ─────────────────────────────────────────
-            + "<td valign='middle' align='center' width='26%' style='background-color:#1c1c1c;padding:16px 10px;border-left:1px solid #262626;' class='barcode-cell'>"
-            + "<div style='background:#ffffff;display:inline-block;padding:12px 8px;border-radius:10px;' class='barcode-wrapper'>"
-            + "<img src='" + barcodeUrl + "' alt='" + bookingRef + "' width='110' style='display:block;max-width:110px;' class='barcode-img' />"
-            + "<div style='color:#111111;font-size:9px;letter-spacing:1px;font-family:monospace;margin-top:6px;text-align:center;' class='barcode-ref'>" + bookingRef + "</div>"
-            + "</div>"
-            + "<div style='color:#777777;font-size:8px;font-family:monospace;margin-top:10px;word-break:break-all;text-align:center;' class='transaction-id'>" + transactionId + "</div>"
-            + "</td>"
+            /* ── COL 3: Barcode panel ──────────────────────────────────── */
+            "<td class='col-barcode' valign='middle' align='center' width='150'" +
+            " style='width:150px;background-color:#1c1c1c;padding:20px 12px;" +
+            "border-left:1px solid #2a2a2a;vertical-align:middle;text-align:center;'>" +
 
-            + "</tr></table>"
+            /* White barcode card */
+            "<div class='barcode-box' style='display:inline-block;background:#ffffff;" +
+                "border-radius:10px;padding:12px 10px;'>" +
+            "<img src='" + barcodeUrl + "' width='110' alt='" + escapeHtml(bookingRef) + "'" +
+            " style='display:block;width:110px;height:auto;' />" +
+            "<div style='color:#111111;font-size:9px;font-weight:700;font-family:monospace;" +
+                "letter-spacing:1px;margin-top:7px;text-align:center;'>" + escapeHtml(bookingRef) + "</div>" +
+            "</div>" +
 
-            + "<div style='text-align:center;margin-top:16px;'>"
-            + "<div style='color:#ffffff;font-size:14px;font-weight:700;'>Enjoy your show!</div>"
-            + "<div style='color:#666666;font-size:10px;margin-top:3px;'>Please arrive 15 minutes before showtime</div>"
-            + "</div>"
+            /* Transaction ID */
+            "<div class='txn-id' style='color:#666666;font-size:8px;font-family:monospace;" +
+                "margin-top:10px;word-break:break-all;text-align:center;line-height:1.4;'>" +
+                escapeHtml(transactionId) + "</div>" +
 
-            + "</td></tr></table>"
-            + "</body></html>";
+            "</td>" + /* end col-barcode */
+
+            "</tr></table>" + /* end ticket card */
+            "</td></tr>" +
+
+            /* ── Footer ────────────────────────────────────────────────── */
+            "<tr><td align='center' style='padding-top:20px;'>" +
+            "<div class='footer-title' style='color:#ffffff;font-size:14px;font-weight:700;'>Enjoy your show!</div>" +
+            "<div style='color:#555555;font-size:10px;margin-top:4px;'>" +
+                "Please arrive 15 minutes before showtime</div>" +
+            "</td></tr>" +
+
+            "</table>" + /* end ew */
+            "</td></tr></table>" + /* end outer wrapper */
+            "</body></html>";
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     //  HELPERS
     // ─────────────────────────────────────────────────────────────────────────
+
     private String buildGenreLine(Booking booking) {
-        String genre = booking.getMovieGenres() != null ? booking.getMovieGenres() : "Action, Drama";
-        String lang = booking.getMovieLanguage() != null ? booking.getMovieLanguage() : "Telugu";
-        Integer runtime = booking.getMovieRuntime() != null ? booking.getMovieRuntime() : 150;
-        return escapeHtml(genre) + " &middot; " + (runtime / 60) + "h " + (runtime % 60) + "m &middot; " + lang.toUpperCase();
+        String genre   = booking.getMovieGenres()   != null ? booking.getMovieGenres()   : "Action, Drama";
+        String lang    = booking.getMovieLanguage()  != null ? booking.getMovieLanguage()  : "Telugu";
+        Integer runtime = booking.getMovieRuntime() != null ? booking.getMovieRuntime()   : 150;
+        return escapeHtml(genre) + " &middot; " +
+               (runtime / 60) + "h " + (runtime % 60) + "m &middot; " +
+               escapeHtml(lang.toUpperCase());
     }
 
     private String resolvePosterUrl(String posterPath) {
         if (posterPath == null || posterPath.isBlank()) {
-            return "https://via.placeholder.com/145x220/1a1a1a/555555?text=No+Image";
+            return "https://via.placeholder.com/130x190/1a1a1a/555555?text=No+Image";
         }
-        if (posterPath.startsWith("http")) {
-            return posterPath;
-        }
+        if (posterPath.startsWith("http")) return posterPath;
         return "https://image.tmdb.org/t/p/w200" + posterPath;
     }
 
@@ -312,12 +356,24 @@ public class EmailService {
         } catch (Exception e) { return t; }
     }
 
-    private String getSafeString(String v, String f) { return (v != null && !v.isEmpty()) ? v : f; }
-    private String formatCurrency(int a) { return String.format("%,d", a); }
-    private String escapeHtml(String t) {
-        return t == null ? "" : t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    private String getSafeString(String v, String fallback) {
+        return (v != null && !v.isEmpty()) ? v : fallback;
     }
+
+    private String formatCurrency(int amount) {
+        return String.format("%,d", amount);
+    }
+
+    private String escapeHtml(String t) {
+        return t == null ? "" : t
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;");
+    }
+
     private String urlEncode(String s) {
         return URLEncoder.encode(s, StandardCharsets.UTF_8);
     }
+
 }
