@@ -31,7 +31,7 @@ public class BookingService {
     @Autowired private BookingRepository    bookingRepository;
     @Autowired private PaymentRepository    paymentRepository;
     @Autowired private EmailService         emailService;
-    @Autowired private SeatLockService      seatLockService;   // ★ NEW
+    @Autowired private SeatLockService      seatLockService;
 
     @Transactional
     public Map<String, Object> createBooking(BookingRequest req, String clerkUserId) {
@@ -43,8 +43,12 @@ public class BookingService {
         validateBookingRequest(req);
 
         LocalDate date = LocalDate.parse(req.getShowDate());
+
+        // ── Find or create show ───────────────────────────────────────────────
+        // Uses findFirst to be resilient if duplicate show rows exist in the DB
+        // (can happen when both lockSeats and createBooking call orElseGet→save).
         Show show = showRepository
-            .findByMovieIdAndShowDateAndShowTime(req.getMovieId(), date, req.getShowTime())
+            .findFirstByMovieIdAndShowDateAndShowTime(req.getMovieId(), date, req.getShowTime())
             .orElseGet(() -> {
                 Show s = new Show();
                 s.setMovieId(req.getMovieId());
@@ -53,8 +57,7 @@ public class BookingService {
                 return showRepository.save(s);
             });
 
-        // Pre-check — fast path for the common case. Not the safety source of
-        // truth; the DB unique constraint below is the actual guard.
+        // Pre-check seats (fast path — DB unique constraint is the real guard)
         for (String seatId : req.getSeats()) {
             if (bookedSeatRepository.existsByShowIdAndSeatId(show.getId(), seatId)) {
                 throw new SeatUnavailableException("Seat " + seatId + " is already booked");
@@ -89,10 +92,7 @@ public class BookingService {
         bookingRepository.save(booking);
         System.out.println("✅ Booking saved — ID: " + booking.getId() + ", Ref: " + bookingRef);
 
-        // ★ DB unique constraint is the real safety net — two concurrent requests
-        //   that both pass the pre-check above will collide here, the second one
-        //   gets a DataIntegrityViolationException which we map to a 409.
-        //   @Transactional rolls back everything so nothing partial is persisted.
+        // Save booked seats — DB unique constraint catches concurrent double-bookings
         try {
             for (String seatId : req.getSeats()) {
                 BookedSeat bs = new BookedSeat();
@@ -113,15 +113,21 @@ public class BookingService {
 
         System.out.println("✅ Booked " + req.getSeats().size() + " seat(s)");
 
-        // ★ Release the temporary locks now that the seats are permanently booked.
-        //   This happens inside the same transaction so other users see the seats
-        //   as "booked" (not "locked") immediately after commit.
+        // ── Release seat locks ────────────────────────────────────────────────
+        // CRITICAL: wrapped in try/catch so a lock-release failure never rolls
+        // back an already-confirmed booking. Locks also auto-expire after 10 min.
         String sessionId = req.getSessionId();
         if (sessionId != null && !sessionId.isBlank()) {
-            seatLockService.releaseLocks(show.getId(), sessionId);
-            System.out.println("🔓 Released seat locks for session: " + sessionId);
+            try {
+                seatLockService.releaseLocks(show.getId(), sessionId);
+                System.out.println("🔓 Released seat locks for session: " + sessionId);
+            } catch (Exception lockEx) {
+                System.err.println("⚠️ Could not release seat locks (non-fatal, will expire): "
+                    + lockEx.getMessage());
+            }
         }
 
+        // ── Save payment record ───────────────────────────────────────────────
         Payment payment = new Payment();
         payment.setBookingId(booking.getId());
         payment.setAmount(req.getTotalPrice());
@@ -152,7 +158,7 @@ public class BookingService {
                 }
             });
         } else {
-            System.err.println("⚠️ No user email on booking request — confirmation email skipped");
+            System.err.println("⚠️ No user email — confirmation email skipped");
         }
 
         System.out.println("🎉 Booking completed successfully!");
