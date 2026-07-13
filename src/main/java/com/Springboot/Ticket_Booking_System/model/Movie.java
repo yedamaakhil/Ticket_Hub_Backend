@@ -1,10 +1,9 @@
 package com.Springboot.Ticket_Booking_System.model;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "movies")
@@ -12,35 +11,67 @@ public class Movie {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	private Integer id;
+	private Long id;
+
+	@Column(length = 500)
 	private String title;
-	private String poster_path;
-	private String genres;
+
+	@Column(columnDefinition = "TEXT")
+	private String overview;
+
+	@Column(columnDefinition = "TEXT")
+	private String posterPath;
+
+	@Column(columnDefinition = "TEXT")
+	private String backdropPath;
+
+	@Column(columnDefinition = "TEXT")
+	private String trailerUrl;
+
+	@Column(length = 20)
+	private String releaseDate;
+
+	@Column(length = 50)
+	private String originalLanguage;
+
+	@Column(length = 255)
+	private String tagline;
+
 	private Integer runtime;
-	private String release_date;
-	private Double vote_average;
+	private Double voteAverage;
+	private Integer voteCount;
+
+	@Column(length = 255)
+	private String theater;
+
+	@Column(length = 50)
+	private String screen;
+
+	// Stored as JSON text, converted to/from List<Map> by MovieService
+	@Column(columnDefinition = "TEXT")
+	private String genresJson;
+
+	@Column(columnDefinition = "TEXT")
+	private String castsJson;
+
+	@Column(length = 50)
+	private String addedBy;
+
+	@CreationTimestamp
+	private LocalDateTime createdAt;
+
+	@UpdateTimestamp
+	private LocalDateTime updatedAt;
 
 	public Movie() {
 		super();
 	}
 
-	public Movie(Integer id, String title, String poster_path, String genres, Integer runtime, String release_date,
-			Double vote_average) {
-		super();
-		this.id = id;
-		this.title = title;
-		this.poster_path = poster_path;
-		this.genres = genres;
-		this.runtime = runtime;
-		this.release_date = release_date;
-		this.vote_average = vote_average;
-	}
-
-	public Integer getId() {
+	public Long getId() {
 		return id;
 	}
 
-	public void setId(Integer id) {
+	public void setId(Long id) {
 		this.id = id;
 	}
 
@@ -52,20 +83,60 @@ public class Movie {
 		this.title = title;
 	}
 
-	public String getPoster_path() {
-		return poster_path;
+	public String getOverview() {
+		return overview;
 	}
 
-	public void setPoster_path(String poster_path) {
-		this.poster_path = poster_path;
+	public void setOverview(String overview) {
+		this.overview = overview;
 	}
 
-	public String getGenres() {
-		return genres;
+	public String getPosterPath() {
+		return posterPath;
 	}
 
-	public void setGenres(String genres) {
-		this.genres = genres;
+	public void setPosterPath(String posterPath) {
+		this.posterPath = posterPath;
+	}
+
+	public String getBackdropPath() {
+		return backdropPath;
+	}
+
+	public void setBackdropPath(String backdropPath) {
+		this.backdropPath = backdropPath;
+	}
+
+	public String getTrailerUrl() {
+		return trailerUrl;
+	}
+
+	public void setTrailerUrl(String trailerUrl) {
+		this.trailerUrl = trailerUrl;
+	}
+
+	public String getReleaseDate() {
+		return releaseDate;
+	}
+
+	public void setReleaseDate(String releaseDate) {
+		this.releaseDate = releaseDate;
+	}
+
+	public String getOriginalLanguage() {
+		return originalLanguage;
+	}
+
+	public void setOriginalLanguage(String originalLanguage) {
+		this.originalLanguage = originalLanguage;
+	}
+
+	public String getTagline() {
+		return tagline;
+	}
+
+	public void setTagline(String tagline) {
+		this.tagline = tagline;
 	}
 
 	public Integer getRuntime() {
@@ -76,26 +147,67 @@ public class Movie {
 		this.runtime = runtime;
 	}
 
-	public String getRelease_date() {
-		return release_date;
+	public Double getVoteAverage() {
+		return voteAverage;
 	}
 
-	public void setRelease_date(String release_date) {
-		this.release_date = release_date;
+	public void setVoteAverage(Double voteAverage) {
+		this.voteAverage = voteAverage;
 	}
 
-	public Double getVote_average() {
-		return vote_average;
+	public Integer getVoteCount() {
+		return voteCount;
 	}
 
-	public void setVote_average(Double vote_average) {
-		this.vote_average = vote_average;
+	public void setVoteCount(Integer voteCount) {
+		this.voteCount = voteCount;
 	}
 
-	@Override
-	public String toString() {
-		return "Movie [id=" + id + ", title=" + title + ", poster_path=" + poster_path + ", genres=" + genres
-				+ ", runtime=" + runtime + ", release_date=" + release_date + ", vote_average=" + vote_average + "]";
+	public String getTheater() {
+		return theater;
 	}
 
+	public void setTheater(String theater) {
+		this.theater = theater;
+	}
+
+	public String getScreen() {
+		return screen;
+	}
+
+	public void setScreen(String screen) {
+		this.screen = screen;
+	}
+
+	public String getGenresJson() {
+		return genresJson;
+	}
+
+	public void setGenresJson(String genresJson) {
+		this.genresJson = genresJson;
+	}
+
+	public String getCastsJson() {
+		return castsJson;
+	}
+
+	public void setCastsJson(String castsJson) {
+		this.castsJson = castsJson;
+	}
+
+	public String getAddedBy() {
+		return addedBy;
+	}
+
+	public void setAddedBy(String addedBy) {
+		this.addedBy = addedBy;
+	}
+
+	public LocalDateTime getCreatedAt() {
+		return createdAt;
+	}
+
+	public LocalDateTime getUpdatedAt() {
+		return updatedAt;
+	}
 }
