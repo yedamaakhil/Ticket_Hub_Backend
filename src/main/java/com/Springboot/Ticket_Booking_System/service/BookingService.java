@@ -26,11 +26,12 @@ import com.Springboot.Ticket_Booking_System.repository.ShowRepository;
 @Service
 public class BookingService {
 
-    @Autowired private ShowRepository showRepository;
+    @Autowired private ShowRepository       showRepository;
     @Autowired private BookedSeatRepository bookedSeatRepository;
-    @Autowired private BookingRepository bookingRepository;
-    @Autowired private PaymentRepository paymentRepository;
-    @Autowired private EmailService emailService;
+    @Autowired private BookingRepository    bookingRepository;
+    @Autowired private PaymentRepository    paymentRepository;
+    @Autowired private EmailService         emailService;
+    @Autowired private SeatLockService      seatLockService;   // ★ NEW
 
     @Transactional
     public Map<String, Object> createBooking(BookingRequest req, String clerkUserId) {
@@ -52,8 +53,8 @@ public class BookingService {
                 return showRepository.save(s);
             });
 
-        // Pre-check — catches the common case fast, but is NOT the source of
-        // safety by itself (two requests can both pass this at the same time).
+        // Pre-check — fast path for the common case. Not the safety source of
+        // truth; the DB unique constraint below is the actual guard.
         for (String seatId : req.getSeats()) {
             if (bookedSeatRepository.existsByShowIdAndSeatId(show.getId(), seatId)) {
                 throw new SeatUnavailableException("Seat " + seatId + " is already booked");
@@ -86,14 +87,12 @@ public class BookingService {
         }
 
         bookingRepository.save(booking);
-        System.out.println("✅ Booking saved with ID: " + booking.getId() + ", Ref: " + bookingRef);
+        System.out.println("✅ Booking saved — ID: " + booking.getId() + ", Ref: " + bookingRef);
 
-        // ★ FIX: this is the REAL safety net — the DB's unique constraint on
-        // (show_id, seat_id) rejects a duplicate insert even if two requests
-        // both passed the pre-check above at the same instant. If it fires,
-        // we convert the low-level DB exception into a clean 409 for the
-        // frontend, and @Transactional rolls back the booking + payment
-        // that were about to be saved, so nothing partial is left behind.
+        // ★ DB unique constraint is the real safety net — two concurrent requests
+        //   that both pass the pre-check above will collide here, the second one
+        //   gets a DataIntegrityViolationException which we map to a 409.
+        //   @Transactional rolls back everything so nothing partial is persisted.
         try {
             for (String seatId : req.getSeats()) {
                 BookedSeat bs = new BookedSeat();
@@ -104,46 +103,52 @@ public class BookingService {
                 bs.setClerkUserId(clerkUserId);
                 bs.setBookingId(booking.getId());
                 bookedSeatRepository.save(bs);
-                bookedSeatRepository.flush(); // force the constraint check now, not at commit
+                bookedSeatRepository.flush(); // push constraint check to now
             }
         } catch (DataIntegrityViolationException e) {
-            System.err.println("⚠️ Concurrent booking detected — seat already taken: " + e.getMessage());
+            System.err.println("⚠️ Concurrent booking detected: " + e.getMessage());
             throw new SeatUnavailableException(
-                "One or more selected seats were just booked by someone else. Please pick different seats.");
+                "One or more seats were just booked by someone else. Please pick different seats.");
         }
-        System.out.println("✅ Booked " + req.getSeats().size() + " seats");
+
+        System.out.println("✅ Booked " + req.getSeats().size() + " seat(s)");
+
+        // ★ Release the temporary locks now that the seats are permanently booked.
+        //   This happens inside the same transaction so other users see the seats
+        //   as "booked" (not "locked") immediately after commit.
+        String sessionId = req.getSessionId();
+        if (sessionId != null && !sessionId.isBlank()) {
+            seatLockService.releaseLocks(show.getId(), sessionId);
+            System.out.println("🔓 Released seat locks for session: " + sessionId);
+        }
 
         Payment payment = new Payment();
         payment.setBookingId(booking.getId());
         payment.setAmount(req.getTotalPrice());
         payment.setPaymentMethod(
             req.getPaymentMethod() != null && !req.getPaymentMethod().isBlank()
-                ? req.getPaymentMethod()
-                : "RAZORPAY"
-        );
+                ? req.getPaymentMethod() : "RAZORPAY");
         payment.setStatus("SUCCESS");
         payment.setTransactionId(truncate(req.getRazorpayPaymentId(), 100));
         paymentRepository.save(payment);
-        System.out.println("✅ Payment saved with Transaction ID: " + payment.getTransactionId());
+        System.out.println("✅ Payment saved — TxID: " + payment.getTransactionId());
 
         Map<String, Object> response = new HashMap<>();
-        response.put("id", booking.getId());
-        response.put("bookingRef", bookingRef);
-        response.put("status", "CONFIRMED");
+        response.put("id",            booking.getId());
+        response.put("bookingRef",    bookingRef);
+        response.put("status",        "CONFIRMED");
         response.put("transactionId", req.getRazorpayPaymentId());
-        response.put("emailSent", false);
+        response.put("emailSent",     false);
 
         if (userEmail != null && !userEmail.trim().isEmpty()) {
             Booking savedBooking = booking;
-            String recipient = userEmail.trim();
+            String  recipient    = userEmail.trim();
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
                     boolean sent = emailService.sendBookingConfirmation(savedBooking, recipient);
                     response.put("emailSent", sent);
-                    if (!sent) {
-                        System.err.println("⚠️ Ticket email was NOT sent to: " + recipient);
-                    }
+                    if (!sent) System.err.println("⚠️ Ticket email NOT sent to: " + recipient);
                 }
             });
         } else {
@@ -170,9 +175,7 @@ public class BookingService {
         }
         boolean sent = emailService.sendBookingConfirmation(booking, recipient);
         result.put("emailSent", sent);
-        if (!sent) {
-            result.put("emailError", "Failed to send — check RESEND_API_KEY on Render");
-        }
+        if (!sent) result.put("emailError", "Failed to send — check RESEND_API_KEY");
         return result;
     }
 
@@ -194,27 +197,24 @@ public class BookingService {
 
     public Map<String, Object> getBookingStatistics() {
         List<Booking> bookings = bookingRepository.findAll();
-        long totalBookings = bookings.size();
-        double totalRevenue = bookings.stream()
-            .filter(b -> "CONFIRMED".equals(b.getStatus()))
-            .mapToDouble(Booking::getTotalPrice).sum();
-        long uniqueUsers = bookings.stream()
-            .map(Booking::getClerkUserId).distinct().count();
-        double avgBookingValue = totalBookings > 0 ? totalRevenue / totalBookings : 0;
-        long completedBookings = bookings.stream()
-            .filter(b -> "CONFIRMED".equals(b.getStatus())).count();
-        long cancelledBookings = bookings.stream()
-            .filter(b -> "CANCELLED".equals(b.getStatus())).count();
+        long   total     = bookings.size();
+        double revenue   = bookings.stream().filter(b -> "CONFIRMED".equals(b.getStatus()))
+                                            .mapToDouble(Booking::getTotalPrice).sum();
+        long   users     = bookings.stream().map(Booking::getClerkUserId).distinct().count();
+        long   confirmed = bookings.stream().filter(b -> "CONFIRMED".equals(b.getStatus())).count();
+        long   cancelled = bookings.stream().filter(b -> "CANCELLED".equals(b.getStatus())).count();
 
         Map<String, Object> stats = new HashMap<>();
-        stats.put("totalBookings", totalBookings);
-        stats.put("totalRevenue", totalRevenue);
-        stats.put("totalUsers", uniqueUsers);
-        stats.put("averageBookingValue", avgBookingValue);
-        stats.put("completedBookings", completedBookings);
-        stats.put("cancelledBookings", cancelledBookings);
+        stats.put("totalBookings",      total);
+        stats.put("totalRevenue",       revenue);
+        stats.put("totalUsers",         users);
+        stats.put("averageBookingValue", total > 0 ? revenue / total : 0);
+        stats.put("completedBookings",  confirmed);
+        stats.put("cancelledBookings",  cancelled);
         return stats;
     }
+
+    // ── Private helpers ──────────────────────────────────────────────────────
 
     private String getTier(String seatId) {
         char row = seatId.charAt(0);
@@ -224,26 +224,24 @@ public class BookingService {
     }
 
     private void validateBookingRequest(BookingRequest req) {
-        if (req.getMovieId() == null) throw new IllegalArgumentException("movieId is required");
-        if (req.getShowDate() == null || req.getShowDate().isBlank()) throw new IllegalArgumentException("showDate is required");
-        if (req.getShowTime() == null || req.getShowTime().isBlank()) throw new IllegalArgumentException("showTime is required");
-        if (req.getSeats() == null || req.getSeats().isEmpty()) throw new IllegalArgumentException("At least one seat is required");
+        if (req.getMovieId()  == null) throw new IllegalArgumentException("movieId is required");
+        if (req.getShowDate() == null || req.getShowDate().isBlank())  throw new IllegalArgumentException("showDate is required");
+        if (req.getShowTime() == null || req.getShowTime().isBlank())  throw new IllegalArgumentException("showTime is required");
+        if (req.getSeats()    == null || req.getSeats().isEmpty())     throw new IllegalArgumentException("At least one seat is required");
         if (req.getTotalPrice() == null) throw new IllegalArgumentException("totalPrice is required");
     }
 
     private Integer resolveSeatPrice(BookingRequest req, String seatId) {
-        if (req.getSeatPrices() != null && req.getSeatPrices().get(seatId) != null) {
+        if (req.getSeatPrices() != null && req.getSeatPrices().get(seatId) != null)
             return req.getSeatPrices().get(seatId);
-        }
         return defaultPriceForSeat(seatId);
     }
 
     private Integer defaultPriceForSeat(String seatId) {
-        String tier = getTier(seatId);
-        return switch (tier) {
-            case "economy" -> 150;
+        return switch (getTier(seatId)) {
+            case "economy"  -> 150;
             case "standard" -> 300;
-            default -> 500;
+            default         -> 500;
         };
     }
 
