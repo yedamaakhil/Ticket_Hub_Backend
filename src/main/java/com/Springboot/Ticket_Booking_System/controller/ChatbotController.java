@@ -20,7 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
-@RequestMapping("/api/chat")
+@RequestMapping("/chat")
 @CrossOrigin(origins = {"http://localhost:5173", "https://tickethub-frontend.vercel.app", "https://tickethub-frontend-git-main.your-username.vercel.app"})
 public class ChatbotController {
 
