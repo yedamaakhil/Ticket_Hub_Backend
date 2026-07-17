@@ -21,10 +21,10 @@ import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/api/chat")
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = {"http://localhost:5173", "https://tickethub-frontend.vercel.app", "https://tickethub-frontend-git-main.your-username.vercel.app"})
 public class ChatbotController {
 
-    @Value("${anthropic.api.key}")
+    @Value("${anthropic.api.key:}")
     private String anthropicApiKey;
 
     @Autowired
@@ -36,38 +36,56 @@ public class ChatbotController {
     private final RestTemplate restTemplate = new RestTemplate();
 
     private static final String CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
-    private static final String CLAUDE_MODEL    = "claude-sonnet-4-6";
+    private static final String CLAUDE_MODEL = "claude-3-sonnet-20240229";
 
     // ── POST /api/chat ──────────────────────────────────────────────────────
-    // Body: { messages: [{role, content}], clerkUserId?: string }
     @PostMapping
     public ResponseEntity<Map<String, Object>> chat(
             @RequestBody Map<String, Object> body,
             HttpServletRequest request) {
 
+        Map<String, Object> response = new HashMap<>();
+
         try {
+            // Check if API key is configured
+            if (anthropicApiKey == null || anthropicApiKey.isBlank() || anthropicApiKey.equals("your-actual-api-key-here")) {
+                response.put("success", false);
+                response.put("reply", "🔧 The chatbot is currently in setup mode. Please configure the Anthropic API key to enable AI responses. Check your environment variables.");
+                return ResponseEntity.ok(response);
+            }
+
             @SuppressWarnings("unchecked")
             List<Map<String, String>> messages =
                 (List<Map<String, String>>) body.get("messages");
 
-            // Optional: get user's booking history for personalised answers
+            if (messages == null || messages.isEmpty()) {
+                response.put("success", false);
+                response.put("reply", "I didn't receive any message. Could you please ask your question?");
+                return ResponseEntity.ok(response);
+            }
+
+            // Get user's booking history for personalized answers
             String clerkUserId = (String) request.getAttribute("clerkUserId");
+            if (clerkUserId == null || clerkUserId.isBlank()) {
+                clerkUserId = (String) body.get("clerkUserId");
+            }
+            
             String bookingContext = buildBookingContext(clerkUserId);
 
-            // ── Build system prompt with live DB data ──────────────────────
+            // Build system prompt with live DB data
             String systemPrompt = buildSystemPrompt(bookingContext);
 
-            // ── Build Claude API request ───────────────────────────────────
+            // Build Claude API request
             Map<String, Object> claudeRequest = new HashMap<>();
-            claudeRequest.put("model",      CLAUDE_MODEL);
-            claudeRequest.put("max_tokens", 500);
-            claudeRequest.put("system",     systemPrompt);
-            claudeRequest.put("messages",   messages);
+            claudeRequest.put("model", CLAUDE_MODEL);
+            claudeRequest.put("max_tokens", 800);
+            claudeRequest.put("system", systemPrompt);
+            claudeRequest.put("messages", messages);
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("x-api-key",         anthropicApiKey);
-            headers.set("anthropic-version",  "2023-06-01");
+            headers.set("x-api-key", anthropicApiKey);
+            headers.set("anthropic-version", "2023-06-01");
 
             HttpEntity<Map<String, Object>> entity =
                 new HttpEntity<>(claudeRequest, headers);
@@ -76,21 +94,19 @@ public class ChatbotController {
             Map<String, Object> claudeResponse = restTemplate.postForObject(
                 CLAUDE_API_URL, entity, Map.class);
 
-            // ── Extract text from response ─────────────────────────────────
+            // Extract text from response
             String reply = extractReply(claudeResponse);
 
-            Map<String, Object> result = new HashMap<>();
-            result.put("reply",   reply);
-            result.put("success", true);
-            return ResponseEntity.ok(result);
+            response.put("reply", reply);
+            response.put("success", true);
+            return ResponseEntity.ok(response);
 
         } catch (Exception e) {
             System.err.println("❌ Chatbot error: " + e.getMessage());
             e.printStackTrace();
-            Map<String, Object> err = new HashMap<>();
-            err.put("success", false);
-            err.put("reply",   "I'm having trouble right now. Please try again in a moment.");
-            return ResponseEntity.ok(err); // always 200 so frontend handles gracefully
+            response.put("success", false);
+            response.put("reply", "I'm having trouble right now. Please try again in a moment. If the problem persists, please contact support.");
+            return ResponseEntity.ok(response);
         }
     }
 
@@ -98,16 +114,23 @@ public class ChatbotController {
     @SuppressWarnings("unchecked")
     private String extractReply(Map<String, Object> response) {
         if (response == null) return "Sorry, I could not get a response.";
-        List<Map<String, Object>> content =
-            (List<Map<String, Object>>) response.get("content");
-        if (content == null || content.isEmpty()) return "Sorry, I could not get a response.";
-        Object text = content.get(0).get("text");
-        return text != null ? text.toString() : "Sorry, I could not get a response.";
+        
+        try {
+            List<Map<String, Object>> content =
+                (List<Map<String, Object>>) response.get("content");
+            if (content == null || content.isEmpty()) return "Sorry, I could not get a response.";
+            
+            Object text = content.get(0).get("text");
+            return text != null ? text.toString() : "Sorry, I could not get a response.";
+        } catch (Exception e) {
+            return "Sorry, I encountered an error processing the response.";
+        }
     }
 
     // ── Get user's booking history from DB ────────────────────────────────
     private String buildBookingContext(String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isBlank()) return "";
+        
         try {
             List<Booking> bookings = bookingRepository.findByClerkUserId(clerkUserId);
             if (bookings.isEmpty()) return "This user has no bookings yet.";
@@ -123,13 +146,14 @@ public class ChatbotController {
                 .append("\n"));
             return sb.toString();
         } catch (Exception e) {
+            System.err.println("⚠️ Error fetching bookings: " + e.getMessage());
             return "";
         }
     }
 
     // ── Full system prompt ─────────────────────────────────────────────────
     private String buildSystemPrompt(String bookingContext) {
-        return """
+        String basePrompt = """
 You are TixBot, the friendly AI assistant for TixRush — an Indian movie ticket booking platform.
 
 ## Your personality
@@ -190,8 +214,6 @@ Taxes added at checkout: GST 8% + Cinema Development Tax 2% + Convenience fee �
 - Cancellations can be done from My Bookings page
 - Booking reference starts with BK (e.g. BK1718234567890)
 
-""" + (bookingContext.isBlank() ? "" : "\n## This user's bookings\n" + bookingContext) + """
-
 ## What you should do
 - Recommend movies based on genre, mood, cast, language, or rating
 - Tell exactly which movies are playing on a specific date and time
@@ -202,5 +224,11 @@ Taxes added at checkout: GST 8% + Cinema Development Tax 2% + Convenience fee �
 - Always be helpful, warm, and concise (under 150 words unless detail is needed)
 - If you don't know something specific, say so honestly and suggest they check the website
 """;
+
+        if (bookingContext != null && !bookingContext.isBlank()) {
+            return basePrompt + "\n\n## This user's bookings\n" + bookingContext;
+        }
+        
+        return basePrompt;
     }
 }
