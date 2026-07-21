@@ -36,7 +36,7 @@ public class ChatbotController {
     private final RestTemplate restTemplate = new RestTemplate();
 
     private static final String CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
-    private static final String CLAUDE_MODEL = "claude-3-sonnet-20240229";
+    private static final String CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
     // ── POST /api/chat ──────────────────────────────────────────────────────
     @PostMapping
